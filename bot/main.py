@@ -26,6 +26,7 @@ from bot.routers.group_events import setup_group_router
 from bot.middlewares.activity import ActivityMiddleware
 from bot.routers.tracks import setup_tracks_router
 from bot.middlewares.command_logging import CommandLoggingMiddleware
+from bot.middlewares.registration_required import RegistrationRequiredMiddleware
 from bot.routers.unknown_commands import setup_unknown_commands_router
 
 
@@ -48,9 +49,12 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     # Log command invocations (/start, /track, etc.)
     dp.message.middleware(CommandLoggingMiddleware())
+    # Block any private actions until user ran /start and is in DB
+    dp.message.middleware(RegistrationRequiredMiddleware(users))
     # Touch user activity for any message/callback via middleware (non-blocking)
     dp.message.middleware(ActivityMiddleware(users))
     dp.callback_query.middleware(ActivityMiddleware(users))
+    dp.callback_query.middleware(RegistrationRequiredMiddleware(users))
 
     # Load plugins and register their handlers
     registry.load_contest_plugins()

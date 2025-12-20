@@ -6,6 +6,7 @@ from aiogram.methods import SendMessage
 from aiogram.types import Update
 
 from bot.db_sa import BlacklistRepo, SettingsRepo, UserRepo
+from bot.middlewares.registration_required import RegistrationRequiredMiddleware
 from bot.routers.common import setup_common_router
 
 
@@ -47,6 +48,7 @@ async def test_start_registers_new_user_when_allowed(db, bot_and_session, admin_
 
     router = setup_common_router(users, admin_id, settings, blacklist)
     dp = Dispatcher()
+    dp.message.middleware(RegistrationRequiredMiddleware(users))
     dp.include_router(router)
 
     upd = _update_with_message(
@@ -82,6 +84,7 @@ async def test_start_rejects_new_user_when_disabled(db, bot_and_session, admin_i
 
     router = setup_common_router(users, admin_id, settings, blacklist)
     dp = Dispatcher()
+    dp.message.middleware(RegistrationRequiredMiddleware(users))
     dp.include_router(router)
 
     upd = _update_with_message(
@@ -116,6 +119,7 @@ async def test_start_blocks_blacklisted_user(db, bot_and_session, admin_id):
 
     router = setup_common_router(users, admin_id, settings, blacklist)
     dp = Dispatcher()
+    dp.message.middleware(RegistrationRequiredMiddleware(users))
     dp.include_router(router)
 
     upd = _update_with_message(
@@ -134,5 +138,37 @@ async def test_start_blocks_blacklisted_user(db, bot_and_session, admin_id):
         isinstance(r.method, SendMessage)
         and r.method.chat_id == 102
         and "отказано" in (r.method.text or "").lower()
+        for r in session.requests
+    )
+
+
+@pytest.mark.asyncio
+async def test_menu_requires_registration(db, bot_and_session, admin_id):
+    bot, session = bot_and_session
+
+    users = UserRepo(db)
+    settings = SettingsRepo(db)
+    blacklist = BlacklistRepo(db)
+
+    router = setup_common_router(users, admin_id, settings, blacklist)
+    dp = Dispatcher()
+    dp.message.middleware(RegistrationRequiredMiddleware(users))
+    dp.include_router(router)
+
+    upd = _update_with_message(
+        update_id=4,
+        chat_id=103,
+        user_id=203,
+        text="/menu",
+        username="newbie",
+        chat_type=ChatType.PRIVATE.value,
+    )
+    await dp.feed_update(bot, upd)
+
+    assert users.exists(203) is False
+    assert any(
+        isinstance(r.method, SendMessage)
+        and r.method.chat_id == 103
+        and "/start" in (r.method.text or "")
         for r in session.requests
     )
