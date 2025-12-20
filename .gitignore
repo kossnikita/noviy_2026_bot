@@ -1,0 +1,7 @@
+#ignore all pychache
+__pycache__/
+.env
+*.sqlite3
+.venv/
+.idea/
+.vscode/
