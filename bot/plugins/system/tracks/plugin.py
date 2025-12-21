@@ -57,7 +57,8 @@ def _get_max_tracks_per_user(settings: SettingsRepo, *, fallback: int) -> int:
     raw = (settings.get(_MAX_TRACKS_PER_USER_KEY, "") or "").strip()
     try:
         v = int(raw)
-        if v > 0:
+        if v >= 0:
+            # 0 means "no per-user limit"
             return v
     except Exception:
         pass
@@ -121,6 +122,7 @@ class Plugin:
         self._chats = ChatRepo(api)
         self._spotify = SpotifyClient(cfg.spotify_client_id, cfg.spotify_client_secret)
         self._max_tracks_per_user = int(cfg.max_tracks_per_user)
+        self._admin_id = int(cfg.admin_id)
 
         self._scheduler_task: asyncio.Task[None] | None = None
 
@@ -161,7 +163,7 @@ class Plugin:
             max_tracks = _get_max_tracks_per_user(
                 self._settings, fallback=self._max_tracks_per_user
             )
-            if self._tracks.count_by_user(user_id) >= max_tracks:
+            if max_tracks != 0 and self._tracks.count_by_user(user_id) >= max_tracks:
                 await message.answer(
                     f"Лимит треков: {max_tracks}. "
                     "Сначала удалите один из своих треков через /mytracks."
@@ -182,7 +184,7 @@ class Plugin:
                         return
 
                 if self._tracks.exists_spotify_id(track.spotify_id):
-                    await message.answer("Этот трек уже есть в общем списке (дубликат).")
+                    await message.answer("Этот трек уже кто-то добавил. Попробуй другой.")
                     return
 
                 await state.update_data(
@@ -281,21 +283,21 @@ class Plugin:
                 await cb.answer("Устаревшее подтверждение")
                 return
 
-            if self._tracks.exists_spotify_id(spotify_id):
-                await cb.answer("Дубликат")
+            if self._tracks.exists_spotify_id(spotify_id=spotify_id):
+                await cb.answer("Уже добавлен")
                 if cb.message:
-                    await cb.message.answer("Этот трек уже добавлен кем-то ранее (дубликат).")
+                    await cb.message.answer("Этот трек уже добавлен кем-то.")
                 await state.clear()
                 return
 
             max_tracks = _get_max_tracks_per_user(
                 self._settings, fallback=self._max_tracks_per_user
             )
-            if self._tracks.count_by_user(cb.from_user.id) >= max_tracks:
+            if max_tracks != 0 and self._tracks.count_by_user(cb.from_user.id) >= max_tracks:
                 await cb.answer("Лимит")
                 if cb.message:
                     await cb.message.answer(
-                        f"Лимит треков: {max_tracks}. Удалите один через /mytracks."
+                        f"Лимит треков: {max_tracks}. Удалите трек через /mytracks."
                     )
                 await state.clear()
                 return
@@ -309,9 +311,9 @@ class Plugin:
             )
             await state.clear()
             if not ok:
-                await cb.answer("Дубликат")
+                await cb.answer("Уже добавлен")
                 if cb.message:
-                    await cb.message.answer("Этот трек уже есть в списке (дубликат).")
+                    await cb.message.answer("Этот трек уже добавлен кем-то.")
                 return
 
             await cb.answer("Добавлено")
@@ -327,14 +329,21 @@ class Plugin:
             )
             if message.from_user is None:
                 return
-            limit = _get_max_tracks_per_user(
+            max_tracks = _get_max_tracks_per_user(
                 self._settings, fallback=self._max_tracks_per_user
             )
-            rows = self._tracks.list_by_user(message.from_user.id, limit=limit)
+
+            list_limit = 50 if max_tracks == 0 else max_tracks
+            rows = self._tracks.list_by_user(message.from_user.id, limit=list_limit)
             if not rows:
                 await message.answer("У вас пока нет добавленных треков. Добавить: /track")
                 return
-            await message.answer(f"Ваши треки (до {limit}): {len(rows)}")
+            if max_tracks == 0:
+                await message.answer(
+                    f"Ваши треки: {len(rows)}"
+                )
+            else:
+                await message.answer(f"Ваши треки (лимит: {max_tracks}): {len(rows)}")
             for r in rows:
                 spotify_id, name, artist, url, added_at = (
                     r[0],
@@ -371,6 +380,46 @@ class Plugin:
                     await cb.message.answer("Не нашёл этот трек среди ваших.")
 
     def register_admin(self, router: Router) -> None:
+        @router.message(Command("tracks_limit"), F.chat.type == ChatType.PRIVATE)
+        async def tracks_limit(message: Message) -> None:
+            if not message.from_user or message.from_user.id != self._admin_id:
+                return
+            if not message.text:
+                return
+
+            parts = message.text.split(maxsplit=1)
+            if len(parts) < 2:
+                raw = (self._settings.get(_MAX_TRACKS_PER_USER_KEY, "") or "").strip()
+                if raw == "0":
+                    cur = "без ограничений"
+                elif raw:
+                    cur = raw
+                else:
+                    cur = str(self._max_tracks_per_user)
+                await message.answer(
+                    "Использование: /tracks_limit <число>\n"
+                    "0 — без ограничений на пользователя\n\n"
+                    f"Текущее значение: {cur}"
+                )
+                return
+
+            raw = parts[1].strip()
+            try:
+                n = int(raw)
+            except Exception:
+                await message.answer("Не понял число. Пример: /tracks_limit 5")
+                return
+            if n < 0:
+                await message.answer("Значение не может быть отрицательным.")
+                return
+
+            self._settings.set(_MAX_TRACKS_PER_USER_KEY, str(n))
+            if n == 0:
+                await message.answer("Готово. Теперь лимита треков на пользователя нет.")
+            else:
+                await message.answer(f"Готово. Лимит треков на пользователя: {n}")
+            _LOG.info("Tracks limit set to %s by admin_id=%s", n, self._admin_id)
+
         @router.callback_query(F.data == _TRACKS_ADMIN_CB)
         async def admin_tracks(cb: CallbackQuery) -> None:
             await cb.answer()
@@ -383,12 +432,16 @@ class Plugin:
             else:
                 status = _closed_text(close_ts)
             if cb.message:
+                limit_text = (
+                    "без ограничений" if max_tracks == 0 else str(max_tracks)
+                )
                 await cb.message.answer(
                     "Треки:\n"
                     f"{status}\n\n"
-                    f"Лимит треков на пользователя: {max_tracks}\n\n"
+                    f"Лимит треков на пользователя: {limit_text}\n\n"
                     "Команды:\n"
                     "- /tracks_close &lt;время&gt; (UTC) — задать закрытие\n"
+                    "- /tracks_limit &lt;число&gt; — лимит (0 = без ограничений)\n"
                     "- /mytracks — ваши треки\n"
                     "- /track — добавить трек"
                 )

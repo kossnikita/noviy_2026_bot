@@ -155,6 +155,7 @@ async def main() -> None:
             BotCommand(command="admin", description="Админ-панель"),
             BotCommand(command="announce", description="Объявление в группы"),
             BotCommand(command="tracks_close", description="Закрыть изменения треков"),
+            BotCommand(command="tracks_limit", description="Лимит треков на пользователя"),
             BotCommand(command="blacklist_add", description="ЧС: добавить тег"),
             BotCommand(command="blacklist_remove", description="ЧС: удалить тег"),
             BotCommand(command="blacklist_list", description="ЧС: список"),
