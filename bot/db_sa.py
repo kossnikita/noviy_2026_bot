@@ -11,6 +11,7 @@ from typing import Iterable, Optional
 
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     DateTime,
     Integer,
     String,
@@ -36,7 +37,7 @@ class Base(DeclarativeBase):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -53,7 +54,7 @@ class User(Base):
 class Chat(Base):
     __tablename__ = "chats"
 
-    chat_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     type: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -86,7 +87,7 @@ class SpotifyTrack(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     artist: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    added_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    added_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
     added_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

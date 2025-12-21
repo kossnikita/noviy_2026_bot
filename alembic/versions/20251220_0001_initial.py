@@ -25,7 +25,7 @@ def upgrade() -> None:
     if not insp.has_table("users"):
         op.create_table(
             "users",
-            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("id", sa.BigInteger(), primary_key=True),
             sa.Column("username", sa.String(), nullable=True),
             sa.Column("first_name", sa.String(), nullable=True),
             sa.Column("last_name", sa.String(), nullable=True),
@@ -58,7 +58,7 @@ def upgrade() -> None:
     if not insp.has_table("chats"):
         op.create_table(
             "chats",
-            sa.Column("chat_id", sa.Integer(), primary_key=True),
+            sa.Column("chat_id", sa.BigInteger(), primary_key=True),
             sa.Column("type", sa.String(), nullable=False),
             sa.Column("title", sa.String(), nullable=True),
             sa.Column(
@@ -97,7 +97,7 @@ def upgrade() -> None:
             sa.Column("name", sa.String(), nullable=False),
             sa.Column("artist", sa.String(), nullable=False),
             sa.Column("url", sa.Text(), nullable=True),
-            sa.Column("added_by", sa.Integer(), nullable=False),
+            sa.Column("added_by", sa.BigInteger(), nullable=False),
             sa.Column(
                 "added_at",
                 sa.DateTime(),
