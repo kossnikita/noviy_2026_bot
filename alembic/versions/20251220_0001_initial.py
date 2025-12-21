@@ -32,13 +32,13 @@ def upgrade() -> None:
             sa.Column(
                 "is_admin",
                 sa.Boolean(),
-                server_default=sa.text("0"),
+                server_default=sa.false(),
                 nullable=False,
             ),
             sa.Column(
                 "is_blacklisted",
                 sa.Boolean(),
-                server_default=sa.text("0"),
+                server_default=sa.false(),
                 nullable=False,
             ),
             sa.Column(

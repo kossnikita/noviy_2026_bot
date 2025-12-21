@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     delete,
+    false,
     func,
     select,
 )
@@ -40,10 +41,10 @@ class User(Base):
     first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_admin: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="0"
+        Boolean, nullable=False, server_default=false()
     )
     is_blacklisted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="0"
+        Boolean, nullable=False, server_default=false()
     )
     registered_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
