@@ -1,9 +1,10 @@
 import importlib
 import pkgutil
 import logging
+import asyncio
 from typing import List
 
-from aiogram import Router
+from aiogram import Bot, Router
 
 from .interfaces import ContestPlugin, SystemPlugin
 
@@ -81,15 +82,42 @@ class PluginRegistry:
             p.register_user(user_router)
             p.register_admin(admin_router)
 
+    def start_system_background_tasks(self, bot: Bot) -> list[asyncio.Task[None]]:
+        tasks: list[asyncio.Task[None]] = []
+        for p in self.system_plugins:
+            start = getattr(p, "start", None)
+            if callable(start):
+                try:
+                    t = start(bot)
+                except Exception:
+                    continue
+                if isinstance(t, asyncio.Task):
+                    tasks.append(t)
+        return tasks
+
     def user_menu_entries(self):
         for p in self.plugins:
             yield p.user_menu_button()
+
+        for p in self.system_plugins:
+            btn = getattr(p, "user_menu_button", None)
+            if callable(btn):
+                v = btn()
+                if v:
+                    yield v
 
     def admin_menu_entries(self):
         for p in self.plugins:
             btn = p.admin_menu_button()
             if btn:
                 yield btn
+
+        for p in self.system_plugins:
+            btn = getattr(p, "admin_menu_button", None)
+            if callable(btn):
+                v = btn()
+                if v:
+                    yield v
 
 
 registry = PluginRegistry()

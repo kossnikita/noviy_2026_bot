@@ -169,7 +169,7 @@ def setup_common_router(
                 user_repo.touch_activity(cb.from_user.id)
             except Exception:
                 pass
-        await cb.answer("Скоро появятся конкурсы!", show_alert=False)
+        await cb.answer("Но наверное что-то будет", show_alert=False)
         logger.debug(
             "No-op callback by user_id=%s", getattr(cb.from_user, "id", None)
         )

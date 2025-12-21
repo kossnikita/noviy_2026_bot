@@ -30,7 +30,6 @@ from bot.middlewares.activity import ActivityMiddleware
 from bot.middlewares.command_logging import CommandLoggingMiddleware
 from bot.middlewares.registration_required import RegistrationRequiredMiddleware
 from bot.routers.unknown_commands import setup_unknown_commands_router
-from bot.schedulers.tracks_closure import run_tracks_closure_scheduler
 
 
 async def _run_api_server(*, host: str, port: int) -> None:
@@ -192,9 +191,7 @@ async def main() -> None:
     )
     logger.info("Starting polling...")
 
-    scheduler_task = asyncio.create_task(
-        run_tracks_closure_scheduler(bot, settings, chats)
-    )
+    plugin_tasks = registry.start_system_background_tasks(bot)
     try:
         await dp.start_polling(bot)
     finally:
@@ -203,11 +200,15 @@ async def main() -> None:
                 setattr(api_server.server, "should_exit", True)
             except Exception:
                 pass
-        scheduler_task.cancel()
-        try:
-            await scheduler_task
-        except Exception:
-            pass
+
+        for t in plugin_tasks:
+            t.cancel()
+        for t in plugin_tasks:
+            try:
+                await t
+            except Exception:
+                pass
+
         if api_server is not None:
             api_server.thread.join(timeout=5)
         logger.info("Polling stopped.")

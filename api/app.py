@@ -438,6 +438,20 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         stmt = select(Chat).order_by(Chat.chat_id).limit(limit).offset(offset)
         return list(s.scalars(stmt))
 
+    @app.get("/chats/group-ids", response_model=list[int])
+    def list_group_chat_ids(s: Session = Depends(get_session)) -> list[int]:
+        stmt = select(Chat.chat_id).where(Chat.type.in_(["group", "supergroup"]))
+        return [int(cid) for cid in s.scalars(stmt)]
+
+    @app.get("/chats/group-count", response_model=CountOut)
+    def count_group_chats(s: Session = Depends(get_session)) -> CountOut:
+        stmt = (
+            select(Chat.chat_id)
+            .where(Chat.type.in_(["group", "supergroup"]))
+            .order_by(Chat.chat_id)
+        )
+        return CountOut(count=len(list(s.scalars(stmt))))
+
     @app.get("/chats/{chat_id}", response_model=ChatOut)
     def get_chat(chat_id: int, s: Session = Depends(get_session)) -> Chat:
         obj = s.get(Chat, chat_id)
@@ -485,22 +499,6 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         s.delete(obj)
         s.commit()
         return None
-
-    @app.get("/chats/group-ids", response_model=list[int])
-    def list_group_chat_ids(s: Session = Depends(get_session)) -> list[int]:
-        stmt = select(Chat.chat_id).where(
-            Chat.type.in_(["group", "supergroup"])
-        )
-        return [int(cid) for cid in s.scalars(stmt)]
-
-    @app.get("/chats/group-count", response_model=CountOut)
-    def count_group_chats(s: Session = Depends(get_session)) -> CountOut:
-        stmt = (
-            select(Chat.chat_id)
-            .where(Chat.type.in_(["group", "supergroup"]))
-            .order_by(Chat.chat_id)
-        )
-        return CountOut(count=len(list(s.scalars(stmt))))
 
     # ---- Blacklist ----
 

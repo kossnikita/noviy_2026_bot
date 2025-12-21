@@ -1,7 +1,8 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -10,6 +11,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from bot.api_repos import (
     ApiSettings,
+    ChatRepo,
     SettingsRepo,
     SpotifyTracksRepo,
     _Api,
@@ -17,11 +19,14 @@ from bot.api_repos import (
 )
 from bot.config import load_config
 from bot.integrations.spotify_client import SpotifyClient
+from bot.plugins.system.tracks.tracks_closure import run_tracks_closure_scheduler
 
 
 _LOG = logging.getLogger("tracks")
 
 _TRACKS_CLOSE_TS_KEY = "tracks_close_at_ts"
+_TRACKS_ADMIN_CB = "tracks:admin"
+_TRACKS_MENU_CB = "tracks:menu"
 
 
 def _get_close_ts(settings: SettingsRepo) -> int | None:
@@ -87,6 +92,12 @@ class Plugin:
 
     name = "Tracks"
 
+    def user_menu_button(self):
+        return ("🎵 Треки", _TRACKS_MENU_CB)
+
+    def admin_menu_button(self):
+        return ("🎵 Треки (настройки)", _TRACKS_ADMIN_CB)
+
     def __init__(self) -> None:
         cfg = load_config()
 
@@ -95,8 +106,20 @@ class Plugin:
 
         self._settings = SettingsRepo(api)
         self._tracks = SpotifyTracksRepo(api)
+        self._chats = ChatRepo(api)
         self._spotify = SpotifyClient(cfg.spotify_client_id, cfg.spotify_client_secret)
         self._max_tracks_per_user = int(cfg.max_tracks_per_user)
+
+        self._scheduler_task: asyncio.Task[None] | None = None
+
+    def start(self, bot: Bot) -> asyncio.Task[None] | None:
+        if self._scheduler_task is not None and not self._scheduler_task.done():
+            return self._scheduler_task
+
+        self._scheduler_task = asyncio.create_task(
+            run_tracks_closure_scheduler(bot, self._settings, self._chats)
+        )
+        return self._scheduler_task
 
     def register_user(self, router: Router) -> None:
         _LOG.info("Tracks plugin registered: /track /mytracks")
@@ -192,6 +215,20 @@ class Plugin:
                 )
                 return
             await _handle_query(message, state, args[1])
+
+        @router.callback_query(F.data == _TRACKS_MENU_CB)
+        async def menu_add_track(cb: CallbackQuery, state: FSMContext) -> None:
+            await cb.answer()
+            closed, close_ts = _is_closed(self._settings)
+            if closed and close_ts is not None:
+                if cb.message:
+                    await cb.message.answer(_closed_text(close_ts))
+                return
+            await state.set_state(_TrackStates.waiting_query)
+            if cb.message:
+                await cb.message.answer(
+                    "Отправьте ссылку Spotify или название трека (можно с исполнителем)."
+                )
 
         @router.message(_TrackStates.waiting_query, F.chat.type == ChatType.PRIVATE)
         async def got_query(message: Message, state: FSMContext) -> None:
@@ -314,5 +351,20 @@ class Plugin:
                     await cb.message.answer("Не нашёл этот трек среди ваших.")
 
     def register_admin(self, router: Router) -> None:
-        # Track management is user-facing for now.
-        return
+        @router.callback_query(F.data == _TRACKS_ADMIN_CB)
+        async def admin_tracks(cb: CallbackQuery) -> None:
+            await cb.answer()
+            close_ts = _get_close_ts(self._settings)
+            if close_ts is None:
+                status = "Закрытие списка треков: не задано"
+            else:
+                status = _closed_text(close_ts)
+            if cb.message:
+                await cb.message.answer(
+                    "Треки:\n"
+                    f"{status}\n\n"
+                    "Команды:\n"
+                    "- /tracks_close &lt;время&gt; (UTC) — задать закрытие\n"
+                    "- /mytracks — ваши треки\n"
+                    "- /track — добавить трек"
+                )
