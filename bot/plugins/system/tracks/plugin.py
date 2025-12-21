@@ -397,7 +397,7 @@ class Plugin:
                 else:
                     cur = str(self._max_tracks_per_user)
                 await message.answer(
-                    "Использование: /tracks_limit <число>\n"
+                    "Использование: /tracks_limit &lt;число&gt;\n"
                     "0 — без ограничений на пользователя\n\n"
                     f"Текущее значение: {cur}"
                 )
