@@ -10,6 +10,8 @@ from contextlib import asynccontextmanager
 from contextlib import contextmanager
 from typing import Any, Generator
 
+from dotenv import load_dotenv
+
 from fastapi import (
     Depends,
     FastAPI,
@@ -90,6 +92,10 @@ def _player_state_payload(ctrl: _PlayerController) -> dict[str, Any]:
 
 
 def create_app(*, db: Db | None = None) -> FastAPI:
+    # Allow configuring API via a local .env file when running without Docker/Compose.
+    # In Compose, env_file/environment already populate os.environ; load_dotenv is harmless.
+    load_dotenv(override=False)
+
     def _ensure_logging_configured() -> None:
         root = logging.getLogger()
         if root.handlers:
@@ -102,11 +108,19 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     _ensure_logging_configured()
     logger = logging.getLogger("api")
 
+    max_tracks_raw = (os.getenv("MAX_TRACKS_PER_USER") or "5").strip()
+    try:
+        max_tracks_per_user = int(max_tracks_raw)
+        if max_tracks_per_user <= 0:
+            max_tracks_per_user = 5
+    except Exception:
+        max_tracks_per_user = 5
+
     _DEFAULT_SETTINGS: dict[str, str] = {
         # Common bot behavior toggles
         "allow_new_users": "1",
         # Tracks feature
-        "max_tracks_per_user": "5",
+        "max_tracks_per_user": str(max_tracks_per_user),
         # Tracks closure feature (empty means "not scheduled")
         "tracks_close_at_ts": "",
         "tracks_close_announced_for_ts": "0",
@@ -442,7 +456,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.get("/chats/group-ids", response_model=list[int])
     def list_group_chat_ids(s: Session = Depends(get_session)) -> list[int]:
-        stmt = select(Chat.chat_id).where(Chat.type.in_(["group", "supergroup"]))
+        stmt = select(Chat.chat_id).where(
+            Chat.type.in_(["group", "supergroup"])
+        )
         return [int(cid) for cid in s.scalars(stmt)]
 
     @app.get("/chats/group-count", response_model=CountOut)
