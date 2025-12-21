@@ -10,7 +10,7 @@ from aiogram.types import (
 from aiogram.enums import ChatType
 from aiogram.fsm.state import default_state
 
-from bot.db import UserRepo, BlacklistRepo, SettingsRepo
+from bot.api_repos import UserRepo, BlacklistRepo, SettingsRepo
 from bot.plugins.loader import registry
 
 
@@ -23,7 +23,7 @@ def build_user_menu_keyboard() -> InlineKeyboardMarkup:
         buttons = [
             [
                 InlineKeyboardButton(
-                    text="No contests yet", callback_data="noop"
+                    text="Пока что пусто...", callback_data="noop"
                 )
             ]
         ]
@@ -154,7 +154,8 @@ def setup_common_router(
         except Exception:
             pass
         await message.answer(
-            "Меню конкурсов:", reply_markup=build_user_menu_keyboard()
+            "Тут пока пусто.",
+            reply_markup=build_user_menu_keyboard(),
         )
         logger.debug(
             "Menu requested by user_id=%s",

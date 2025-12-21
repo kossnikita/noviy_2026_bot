@@ -1,4 +1,4 @@
-from bot.db_sa import BlacklistRepo, SettingsRepo, SpotifyTracksRepo, UserRepo
+from api.db_sa import BlacklistRepo, SettingsRepo, SpotifyTracksRepo, UserRepo
 
 
 def test_user_repo_upsert_and_exists(db):

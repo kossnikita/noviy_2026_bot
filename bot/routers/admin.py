@@ -12,7 +12,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot.db import UserRepo, ChatRepo, BlacklistRepo, SettingsRepo
+from bot.api_repos import UserRepo, ChatRepo, BlacklistRepo, SettingsRepo
 from bot.plugins.loader import registry
 
 
@@ -53,7 +53,9 @@ def _parse_close_time(arg: str, *, now_utc: datetime) -> datetime | None:
 
     # Accept: YYYY-MM-DD HH:MM
     try:
-        dt = datetime.strptime(raw, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(raw, "%Y-%m-%d %H:%M").replace(
+            tzinfo=timezone.utc
+        )
         return dt
     except ValueError:
         pass
@@ -249,12 +251,15 @@ def setup_admin_router(
 
         parts = message.text.split(maxsplit=1)
         if len(parts) < 2:
+            close_ts = settings_repo.get(_TRACKS_CLOSE_TS_KEY, "0")
             await message.reply(
-                "Использование: /tracks_close <время>\n"
+                "Использование: /tracks_close &lt;время&gt;\n"
                 "Форматы (UTC):\n"
                 "- HH:MM\n"
                 "- YYYY-MM-DD HH:MM\n"
-                "- ISO: 2025-12-20T23:00:00Z"
+                "- ISO: 2025-12-20T23:00:00Z\n\n"
+                f"Текущее время закрытия треков: "
+                f"{close_ts if close_ts != '0' else 'не установлено'}"
             )
             return
 
@@ -263,18 +268,22 @@ def setup_admin_router(
         if dt is None:
             await message.reply("Не понял время. Пример: /tracks_close 23:00")
             return
-        if dt <= now_utc:
-            await message.reply("Время должно быть в будущем.")
-            return
 
         close_ts = int(dt.timestamp())
         delta = int(close_ts - int(now_utc.timestamp()))
-        await message.reply(
-            "Подтвердите закрытие изменения треков:\n"
-            f"Время (UTC): {dt:%Y-%m-%d %H:%M}\n"
-            f"Наступит через: {_fmt_delta(delta)}",
-            reply_markup=_tracks_close_confirm_kb(close_ts),
-        )
+        if dt <= now_utc:
+            # Если в прошлом, то отключить закрытие
+            settings_repo.set(_TRACKS_CLOSE_TS_KEY, "0")
+            settings_repo.set(_TRACKS_CLOSE_ANNOUNCED_FOR_TS_KEY, "0")
+            logger.info("Tracks close disabled by admin_id=%s", admin_id)
+            await message.reply("Ок, изменение треков теперь открыто всегда.")
+        else:
+            await message.reply(
+                "Подтвердите закрытие изменения треков:\n"
+                f"Время (UTC): {dt:%Y-%m-%d %H:%M}\n"
+                f"Наступит через: {_fmt_delta(delta)}",
+                reply_markup=_tracks_close_confirm_kb(close_ts),
+            )
 
     @router.callback_query(F.data == "tracks:close:cancel")
     async def tracks_close_cancel(cb: CallbackQuery):
@@ -313,6 +322,10 @@ def setup_admin_router(
             await cb.message.answer(
                 f"Готово. Изменение треков будет закрыто (UTC): {dt:%Y-%m-%d %H:%M}"
             )
-        logger.info("Tracks close time set close_ts=%s by admin_id=%s", close_ts, admin_id)
+        logger.info(
+            "Tracks close time set close_ts=%s by admin_id=%s",
+            close_ts,
+            admin_id,
+        )
 
     return router

@@ -41,6 +41,14 @@ class UserUpdate(BaseModel):
     is_blacklisted: Optional[bool] = None
 
 
+class BlacklistByUsername(BaseModel):
+    username: str
+
+
+class BlacklistByUsernameOut(BaseModel):
+    updated: int
+
+
 # ---- Chats ----
 
 
@@ -60,6 +68,10 @@ class ChatCreate(BaseModel):
 class ChatUpdate(BaseModel):
     type: Optional[str] = None
     title: Optional[str] = None
+
+
+class CountOut(BaseModel):
+    count: int
 
 
 # ---- Blacklist ----
@@ -114,6 +126,16 @@ class SpotifyTrackCreate(BaseModel):
 
 
 class SpotifyTrackUpdate(BaseModel):
+    spotify_id: Optional[str] = None
     name: Optional[str] = None
     artist: Optional[str] = None
     url: Optional[str] = None
+    added_by: Optional[int] = None
+
+
+class ExistsOut(BaseModel):
+    exists: bool
+
+
+class DeletedOut(BaseModel):
+    deleted: int

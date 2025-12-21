@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+import threading
+from dataclasses import dataclass
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -11,40 +13,42 @@ from aiogram.types.bot_command_scope_all_private_chats import BotCommandScopeAll
 from aiogram.types.bot_command_scope_chat import BotCommandScopeChat
 
 from bot.config import load_config
-from bot.db import (
-    init_db,
-    UserRepo,
-    ChatRepo,
+from bot.api_repos import (
+    ApiSettings,
     BlacklistRepo,
+    ChatRepo,
     SettingsRepo,
-    SpotifyTracksRepo,
+    UserRepo,
+    _Api,
+    _api_base_url_from_env,
 )
-from bot.integrations.spotify_client import SpotifyClient
 from bot.plugins.loader import registry
 from bot.routers.common import setup_common_router
 from bot.routers.admin import setup_admin_router
 from bot.routers.group_events import setup_group_router
 from bot.middlewares.activity import ActivityMiddleware
-from bot.routers.tracks import setup_tracks_router
 from bot.middlewares.command_logging import CommandLoggingMiddleware
 from bot.middlewares.registration_required import RegistrationRequiredMiddleware
 from bot.routers.unknown_commands import setup_unknown_commands_router
 from bot.schedulers.tracks_closure import run_tracks_closure_scheduler
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    val = (os.getenv(name) or "").strip().lower()
-    if not val:
-        return default
-    return val in {"1", "true", "yes", "y", "on"}
+async def _run_api_server(*, host: str, port: int) -> None:
+    raise RuntimeError("Deprecated: API server now runs in a background thread")
 
 
-async def _run_api_server(*, db, host: str, port: int) -> None:
+@dataclass
+class _ApiServerHandle:
+    server: object
+    thread: threading.Thread
+
+
+def _start_api_server_thread(*, host: str, port: int) -> _ApiServerHandle:
     import uvicorn
 
-    from bot.api.app import create_app
+    from api.app import create_app
 
-    app = create_app(db=db)
+    app = create_app()
     config = uvicorn.Config(
         app,
         host=host,
@@ -54,7 +58,27 @@ async def _run_api_server(*, db, host: str, port: int) -> None:
         log_config=None,
     )
     server = uvicorn.Server(config)
-    await server.serve()
+
+    thread = threading.Thread(target=server.run, name="api-uvicorn", daemon=True)
+    thread.start()
+    return _ApiServerHandle(server=server, thread=thread)
+
+
+async def _wait_api_ready(*, base_url: str, timeout_s: float = 10.0) -> None:
+    import time
+
+    start = time.time()
+    api = _Api(ApiSettings(base_url=base_url, timeout_s=1.0))
+    while True:
+        try:
+            r = api._request("GET", "/health")
+            if r.status_code == 200:
+                return
+        except Exception:
+            pass
+        if (time.time() - start) >= timeout_s:
+            return
+        await asyncio.sleep(0.2)
 
 
 async def main() -> None:
@@ -67,10 +91,17 @@ async def main() -> None:
     cfg = load_config()
     logger.info("Config loaded. DB path=%s", cfg.db_path)
 
-    db = init_db(database_url=cfg.database_url, db_path=cfg.db_path)
-    logger.info("Database initialized (SQLAlchemy + Alembic)")
-    users = UserRepo(db)
-    chats = ChatRepo(db)
+    api_host = (os.getenv("API_HOST") or "0.0.0.0").strip()
+    api_port = int((os.getenv("API_PORT") or "8000").strip())
+    api_base_url = _api_base_url_from_env(fallback_port=api_port)
+
+    logger.info("Starting FastAPI server on %s:%s", api_host, api_port)
+    api_server = _start_api_server_thread(host=api_host, port=api_port)
+    await _wait_api_ready(base_url=api_base_url)
+
+    api = _Api(ApiSettings(base_url=api_base_url, timeout_s=5.0))
+    users = UserRepo(api)
+    chats = ChatRepo(api)
 
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
@@ -84,28 +115,24 @@ async def main() -> None:
     dp.callback_query.middleware(RegistrationRequiredMiddleware(users))
 
     # Load plugins and register their handlers
-    registry.load_contest_plugins()
+    registry.load_all_plugins()
     try:
         from bot.plugins.loader import registry as _r
-        logger.info("Loaded %d plugin(s)", len(_r.plugins))
+        logger.info(
+            "Loaded %d contest plugin(s), %d system plugin(s)",
+            len(_r.plugins),
+            len(_r.system_plugins),
+        )
     except Exception:
         logger.info("Plugins loaded")
 
     # Routers
-    blacklist = BlacklistRepo(db)
-    settings = SettingsRepo(db)
-    tracks_repo = SpotifyTracksRepo(db)
-    spotify = SpotifyClient(cfg.spotify_client_id, cfg.spotify_client_secret)
+    blacklist = BlacklistRepo(api)
+    settings = SettingsRepo(api)
 
     common_router = setup_common_router(users, cfg.admin_id, settings, blacklist)
     admin_router = setup_admin_router(users, chats, cfg.admin_id, blacklist, settings)
     group_router = setup_group_router(chats, users)
-    tracks_router = setup_tracks_router(
-        tracks_repo,
-        spotify,
-        cfg.max_tracks_per_user,
-        settings,
-    )
     unknown_router = setup_unknown_commands_router()
 
     # Let plugins register their handlers into the same routers
@@ -151,7 +178,6 @@ async def main() -> None:
     dp.include_router(common_router)
     dp.include_router(admin_router)
     dp.include_router(group_router)
-    dp.include_router(tracks_router)
     dp.include_router(unknown_router)
     logger.info(
         "Routers included (order): %s",
@@ -160,21 +186,11 @@ async def main() -> None:
                 common_router.name,
                 admin_router.name,
                 group_router.name,
-                tracks_router.name,
                 unknown_router.name,
             ]
         ),
     )
     logger.info("Starting polling...")
-
-    api_task: asyncio.Task[None] | None = None
-    if _env_flag("API_ENABLED", default=False):
-        api_host = (os.getenv("API_HOST") or "0.0.0.0").strip()
-        api_port = int((os.getenv("API_PORT") or "8000").strip())
-        logger.info("Starting FastAPI server on %s:%s", api_host, api_port)
-        api_task = asyncio.create_task(
-            _run_api_server(db=db, host=api_host, port=api_port)
-        )
 
     scheduler_task = asyncio.create_task(
         run_tracks_closure_scheduler(bot, settings, chats)
@@ -182,15 +198,18 @@ async def main() -> None:
     try:
         await dp.start_polling(bot)
     finally:
-        if api_task is not None:
-            api_task.cancel()
+        if api_server is not None:
+            try:
+                setattr(api_server.server, "should_exit", True)
+            except Exception:
+                pass
         scheduler_task.cancel()
         try:
-            if api_task is not None:
-                await api_task
             await scheduler_task
         except Exception:
             pass
+        if api_server is not None:
+            api_server.thread.join(timeout=5)
         logger.info("Polling stopped.")
 
 

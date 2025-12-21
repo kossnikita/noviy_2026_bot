@@ -1,6 +1,8 @@
 # Party Contests Telegram Bot
 
-Modular Telegram bot for party contests with admin panel, SQLite user DB, and drop-in contest plugins.
+Modular Telegram bot for party contests with admin panel and drop-in contest plugins.
+
+Database/models are hosted by the FastAPI service (package `api/`). The bot talks to it over HTTP.
 
 ## Features
 - Admin panel with stats and broadcast
@@ -35,10 +37,10 @@ Set:
 - `ADMIN_ID` – numeric Telegram user ID of the admin
 - `DB_PATH` – path to SQLite DB (default: database.sqlite3)
 
-4) Run the bot:
+4) Run bot + API together:
 
 ```bash
-python -m bot.main
+python -m main
 ```
 
 5) Add the bot to your group chat if desired. The bot records known group chats when added.
@@ -57,4 +59,4 @@ See: `bot/plugins/contests/sample_quiz/` for a minimal example.
 
 ## Notes
 - This project uses `aiogram` v3 API.
-- Database tables are auto-created on startup.
+- API server runs with FastAPI + SQLAlchemy + Alembic migrations.

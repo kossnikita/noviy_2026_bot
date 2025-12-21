@@ -5,7 +5,7 @@ from aiogram.enums import ChatType
 from aiogram.methods import SendMessage
 from aiogram.types import Update
 
-from bot.db_sa import BlacklistRepo, ChatRepo, SettingsRepo, UserRepo
+from api.db_sa import BlacklistRepo, ChatRepo, SettingsRepo, UserRepo
 from bot.routers.admin import setup_admin_router
 
 

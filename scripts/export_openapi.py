@@ -3,7 +3,7 @@
 Usage:
   python scripts/export_openapi.py --out openapi.json
 
-This script imports the FastAPI app from bot.api.app and writes the OpenAPI schema.
+This script imports the FastAPI app from api.app and writes the OpenAPI schema.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from bot.api.app import create_app
+from api.app import create_app
 
 
 def main() -> None:

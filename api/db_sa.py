@@ -1,12 +1,6 @@
-"""Compatibility shim.
-
-DB/models moved to the top-level package `api`.
-"""
-
-from api.db_sa import *  # noqa: F401,F403
 import logging
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Iterable, Optional
 
 from sqlalchemy import (
@@ -16,15 +10,20 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    delete,
     func,
     select,
-    delete,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    sessionmaker,
+)
 from sqlalchemy.pool import StaticPool
-
 
 logger = logging.getLogger("db")
 
@@ -40,8 +39,12 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     first_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
-    is_blacklisted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0"
+    )
+    is_blacklisted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0"
+    )
     registered_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
@@ -81,8 +84,12 @@ class Setting(Base):
 class SpotifyTrack(Base):
     __tablename__ = "spotify_tracks"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    spotify_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    spotify_id: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True
+    )
     name: Mapped[str] = mapped_column(String, nullable=False)
     artist: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -95,7 +102,6 @@ class SpotifyTrack(Base):
 def build_database_url(database_url: str, db_path: str) -> str:
     if database_url:
         return database_url
-    # Default: sqlite file path
     return f"sqlite:///{db_path}"
 
 
@@ -111,9 +117,9 @@ class Db:
 def create_db(database_url: str, db_path: str) -> Db:
     url = build_database_url(database_url, db_path)
     engine_kwargs = {"future": True}
-    # SQLite in-memory DB is per-connection by default. For tests we need a single
-    # shared connection so that `Base.metadata.create_all()` is visible to sessions.
-    if url.startswith("sqlite") and (":memory:" in url or "mode=memory" in url):
+    if url.startswith("sqlite") and (
+        ":memory:" in url or "mode=memory" in url
+    ):
         engine_kwargs.update(
             {
                 "connect_args": {"check_same_thread": False},
@@ -121,12 +127,14 @@ def create_db(database_url: str, db_path: str) -> Db:
             }
         )
     engine = create_engine(url, **engine_kwargs)
-    SessionFactory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+    SessionFactory = sessionmaker(
+        bind=engine, expire_on_commit=False, future=True
+    )
     logger.info("SQLAlchemy engine created: %s", url)
     return Db(engine=engine, session_factory=SessionFactory)
 
 
-# --- Repository layer (API compatible with old sqlite repos) ---
+# --- Repository layer (kept for tests and API implementation) ---
 
 
 class UserRepo:
@@ -148,7 +156,6 @@ class UserRepo:
             if u is None:
                 u = User(id=user_id)
                 s.add(u)
-                # registered_at handled by DB default
             u.username = username
             u.first_name = first
             u.last_name = last
@@ -182,7 +189,9 @@ class UserRepo:
         if not uname:
             return 0
         with self.db.session() as s:
-            q = select(User).where(func.lower(User.username) == func.lower(uname))
+            q = select(User).where(
+                func.lower(User.username) == func.lower(uname)
+            )
             rows = list(s.scalars(q))
             for u in rows:
                 u.is_blacklisted = True
@@ -220,7 +229,9 @@ class ChatRepo:
         self.db = db
         self._log = logging.getLogger(self.__class__.__name__)
 
-    def upsert_chat(self, chat_id: int, chat_type: str, title: Optional[str]) -> None:
+    def upsert_chat(
+        self, chat_id: int, chat_type: str, title: Optional[str]
+    ) -> None:
         with self.db.session() as s:
             c = s.get(Chat, chat_id)
             if c is None:
@@ -230,7 +241,9 @@ class ChatRepo:
                 c.type = chat_type
                 c.title = title
             s.commit()
-        self._log.debug("Upsert chat id=%s type=%s title=%s", chat_id, chat_type, title)
+        self._log.debug(
+            "Upsert chat id=%s type=%s title=%s", chat_id, chat_type, title
+        )
 
     def count(self) -> int:
         with self.db.session() as s:
@@ -243,7 +256,9 @@ class ChatRepo:
 
     def group_chat_ids(self) -> Iterable[int]:
         with self.db.session() as s:
-            stmt = select(Chat.chat_id).where(Chat.type.in_(["group", "supergroup"]))
+            stmt = select(Chat.chat_id).where(
+                Chat.type.in_(["group", "supergroup"])
+            )
             for cid in s.scalars(stmt):
                 yield int(cid)
 
@@ -275,10 +290,9 @@ class BlacklistRepo:
 
     def list(self) -> Iterable[tuple]:
         with self.db.session() as s:
-            stmt = (
-                select(Blacklist.tag, Blacklist.note, Blacklist.created_at)
-                .order_by(Blacklist.created_at.desc())
-            )
+            stmt = select(
+                Blacklist.tag, Blacklist.note, Blacklist.created_at
+            ).order_by(Blacklist.created_at.desc())
             for t, n, c in s.execute(stmt).all():
                 yield (t, n, c)
 
@@ -330,7 +344,11 @@ class SpotifyTracksRepo:
 
     def exists_spotify_id(self, spotify_id: str) -> bool:
         with self.db.session() as s:
-            stmt = select(SpotifyTrack.id).where(SpotifyTrack.spotify_id == spotify_id).limit(1)
+            stmt = (
+                select(SpotifyTrack.id)
+                .where(SpotifyTrack.spotify_id == spotify_id)
+                .limit(1)
+            )
             return s.scalar(stmt) is not None
 
     def add_track(
@@ -353,7 +371,9 @@ class SpotifyTracksRepo:
                     )
                 )
                 s.commit()
-            self._log.info("Track added spotify_id=%s by user_id=%s", spotify_id, added_by)
+            self._log.info(
+                "Track added spotify_id=%s by user_id=%s", spotify_id, added_by
+            )
             return True
         except IntegrityError:
             return False
@@ -377,13 +397,16 @@ class SpotifyTracksRepo:
     def delete_by_user(self, user_id: int, spotify_id: str) -> int:
         with self.db.session() as s:
             stmt = delete(SpotifyTrack).where(
-                SpotifyTrack.added_by == user_id, SpotifyTrack.spotify_id == spotify_id
+                SpotifyTrack.added_by == user_id,
+                SpotifyTrack.spotify_id == spotify_id,
             )
             res = s.execute(stmt)
             s.commit()
             deleted = int(getattr(res, "rowcount", 0) or 0)
             if deleted:
                 self._log.info(
-                    "Track deleted spotify_id=%s by user_id=%s", spotify_id, user_id
+                    "Track deleted spotify_id=%s by user_id=%s",
+                    spotify_id,
+                    user_id,
                 )
             return deleted

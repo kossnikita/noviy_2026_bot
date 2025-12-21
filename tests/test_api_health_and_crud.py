@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from bot.api.app import create_app
-from bot.db_sa import Base, create_db
+from api.app import create_app
+from api.db_sa import Base, create_db
 
 
 def _client():

@@ -3,7 +3,7 @@ import pytest_asyncio
 
 from aiogram import Bot
 
-from bot.db_sa import Base, create_db
+from api.db_sa import Base, create_db
 
 from .fakes import FakeSession
 

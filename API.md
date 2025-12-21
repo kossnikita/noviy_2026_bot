@@ -6,7 +6,7 @@
 - Swagger UI: `GET /docs`
 - ReDoc: `GET /redoc`
 
-По умолчанию сервер запускается из [bot/api_main.py](bot/api_main.py) на `http://localhost:8000`.
+По умолчанию сервер запускается из [api/main.py](api/main.py) на `http://localhost:8000`.
 
 ## Общие правила
 

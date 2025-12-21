@@ -16,3 +16,15 @@ class ContestPlugin(Protocol):
     def admin_menu_button(self) -> Optional[Tuple[str, str]]:
         """Return (text, callback_data) or None to skip from admin menu."""
         ...
+
+
+class SystemPlugin(Protocol):
+    """Non-contest plugin.
+
+    Used for bot features that should not appear in the contest menus.
+    """
+
+    name: str
+
+    def register_user(self, router: Router) -> None: ...
+    def register_admin(self, router: Router) -> None: ...

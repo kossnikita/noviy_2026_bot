@@ -4,7 +4,7 @@ from typing import Callable, Any, Dict
 from aiogram.types import Message, CallbackQuery
 from aiogram import BaseMiddleware
 
-from bot.db import UserRepo
+from bot.api_repos import UserRepo
 
 
 class ActivityMiddleware(BaseMiddleware):

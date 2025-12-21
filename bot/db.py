@@ -1,3 +1,10 @@
+"""Compatibility shim.
+
+The bot must not access the database directly. DB implementation lives in `api`.
+Keep this module only to avoid breaking older imports.
+"""
+
+from api.db import *  # noqa: F401,F403
 """Database layer (SQLAlchemy + Alembic).
 
 This module intentionally preserves the old import surface (e.g. `from bot.db import UserRepo`).

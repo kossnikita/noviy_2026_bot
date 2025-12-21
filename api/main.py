@@ -12,6 +12,7 @@ def main() -> None:
             level=logging.INFO,
             format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
         )
+
     app = create_app()
     uvicorn.run(
         app,

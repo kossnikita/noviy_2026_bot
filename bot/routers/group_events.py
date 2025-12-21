@@ -4,7 +4,7 @@ from aiogram.types import Message
 from aiogram.types import ChatMemberUpdated
 from aiogram.enums import ChatType
 
-from bot.db import ChatRepo, UserRepo
+from bot.api_repos import ChatRepo, UserRepo
 
 
 def setup_group_router(chat_repo: ChatRepo, user_repo: UserRepo) -> Router:

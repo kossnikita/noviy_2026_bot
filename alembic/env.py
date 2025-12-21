@@ -7,7 +7,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from bot.db_sa import Base, build_database_url
+from api.db_sa import Base, build_database_url
 
 
 config = context.config

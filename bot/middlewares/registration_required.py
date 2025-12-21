@@ -5,7 +5,7 @@ from aiogram import BaseMiddleware
 from aiogram.enums import ChatType
 from aiogram.types import CallbackQuery, Message
 
-from bot.db import UserRepo
+from bot.api_repos import UserRepo
 
 
 class RegistrationRequiredMiddleware(BaseMiddleware):

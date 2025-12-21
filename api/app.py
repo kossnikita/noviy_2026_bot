@@ -2,30 +2,43 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
-from typing import Any, Generator, Iterable
+from typing import Any, Generator
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
-from starlette.requests import Request
-from starlette.responses import Response
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.requests import Request
+from starlette.responses import Response
 
-from bot.db import Db, init_db
-from bot.db_sa import Blacklist, Chat, Setting, SpotifyTrack, User
+from api.db import Db, init_db
+from api.db_sa import Blacklist, Chat, Setting, SpotifyTrack, User
 
 from .schemas import (
+    BlacklistByUsername,
+    BlacklistByUsernameOut,
     BlacklistCreate,
     BlacklistOut,
     BlacklistUpdate,
     ChatCreate,
     ChatOut,
     ChatUpdate,
+    CountOut,
+    DeletedOut,
+    ExistsOut,
     SettingOut,
     SettingUpsert,
     SpotifyTrackCreate,
@@ -55,12 +68,12 @@ class _PlayerController:
 
 def _track_to_dict(track: SpotifyTrack) -> dict[str, Any]:
     return {
-        "id": track.id,
+        "id": int(track.id),
         "spotify_id": track.spotify_id,
         "name": track.name,
         "artist": track.artist,
         "url": track.url,
-        "added_by": track.added_by,
+        "added_by": int(track.added_by),
         "added_at": track.added_at.isoformat() if track.added_at else None,
     }
 
@@ -78,7 +91,6 @@ def _player_state_payload(ctrl: _PlayerController) -> dict[str, Any]:
 
 def create_app(*, db: Db | None = None) -> FastAPI:
     def _ensure_logging_configured() -> None:
-        # If launched standalone, there may be no handlers configured.
         root = logging.getLogger()
         if root.handlers:
             return
@@ -90,6 +102,23 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     _ensure_logging_configured()
     logger = logging.getLogger("api")
 
+    _DEFAULT_SETTINGS: dict[str, str] = {
+        # Common bot behavior toggles
+        "allow_new_users": "1",
+        # Tracks closure feature (empty means "not scheduled")
+        "tracks_close_at_ts": "",
+        "tracks_close_announced_for_ts": "0",
+    }
+
+    def _ensure_default_settings(s: Session) -> None:
+        changed = False
+        for key, value in _DEFAULT_SETTINGS.items():
+            if s.get(Setting, key) is None:
+                s.add(Setting(key=key, value=value))
+                changed = True
+        if changed:
+            s.commit()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("API starting")
@@ -99,21 +128,27 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             app.state.db = init_db(database_url=database_url, db_path=db_path)
             logger.info("DB initialized for API (db_path=%s)", db_path)
         else:
-            # When DB is injected (tests), it may already be attached below.
             app.state.db = db
             logger.info("DB injected for API")
+
+        try:
+            with app.state.db.session() as s:
+                _ensure_default_settings(s)
+        except Exception:
+            logger.exception("Failed to ensure default settings")
         yield
         logger.info("API stopping")
 
     app = FastAPI(title="noviy_2026_bot API", lifespan=lifespan)
-
-    # Shared in-memory player state for WebSocket clients.
     app.state.player = _PlayerController()
 
     if db is not None:
-        # Tests often construct TestClient without a context manager; in that case
-        # lifespan may not run. Attach DB immediately.
         app.state.db = db
+        try:
+            with db.session() as s:
+                _ensure_default_settings(s)
+        except Exception:
+            logger.exception("Failed to ensure default settings")
 
     @app.middleware("http")
     async def access_log_middleware(request: Request, call_next) -> Response:
@@ -141,7 +176,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         return response
 
     def _load_playlist(s: Session) -> list[SpotifyTrack]:
-        stmt = select(SpotifyTrack).order_by(SpotifyTrack.added_at.asc(), SpotifyTrack.id.asc())
+        stmt = select(SpotifyTrack).order_by(
+            SpotifyTrack.added_at.asc(), SpotifyTrack.id.asc()
+        )
         return list(s.scalars(stmt))
 
     async def _broadcast_player_state(ctrl: _PlayerController) -> None:
@@ -159,11 +196,12 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     async def ws_player(ws: WebSocket) -> None:
         await ws.accept()
         ctrl: _PlayerController = app.state.player
-        logger.info("WS /ws/player connected client=%s", getattr(ws, "client", None))
+        logger.info(
+            "WS /ws/player connected client=%s", getattr(ws, "client", None)
+        )
 
         async with ctrl.lock:
             ctrl.clients.add(ws)
-            # Refresh playlist on connect, so the first state is useful.
             with app.state.db.session() as s:
                 ctrl.playlist = _load_playlist(s)
             if ctrl.index is None and ctrl.playlist:
@@ -175,9 +213,15 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         try:
             while True:
                 msg = await ws.receive_json()
-                op = (msg.get("op") or "").strip().lower() if isinstance(msg, dict) else ""
+                op = (
+                    (msg.get("op") or "").strip().lower()
+                    if isinstance(msg, dict)
+                    else ""
+                )
                 if not op:
-                    await ws.send_json({"type": "error", "message": "Missing op"})
+                    await ws.send_json(
+                        {"type": "error", "message": "Missing op"}
+                    )
                     continue
 
                 async with ctrl.lock:
@@ -194,7 +238,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             {
                                 "type": "playlist",
                                 "index": ctrl.index,
-                                "playlist": [_track_to_dict(t) for t in ctrl.playlist],
+                                "playlist": [
+                                    _track_to_dict(t) for t in ctrl.playlist
+                                ],
                             }
                         )
                         continue
@@ -204,7 +250,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             ctrl.playlist = _load_playlist(s)
                         if ctrl.index is None and ctrl.playlist:
                             ctrl.index = 0
-                        if ctrl.index is not None and ctrl.index >= len(ctrl.playlist):
+                        if ctrl.index is not None and ctrl.index >= len(
+                            ctrl.playlist
+                        ):
                             ctrl.index = 0 if ctrl.playlist else None
                         await _broadcast_player_state(ctrl)
                         continue
@@ -226,7 +274,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             if ctrl.index is None:
                                 ctrl.index = 0
                             else:
-                                ctrl.index = min(ctrl.index + 1, len(ctrl.playlist) - 1)
+                                ctrl.index = min(
+                                    ctrl.index + 1, len(ctrl.playlist) - 1
+                                )
                         await _broadcast_player_state(ctrl)
                         continue
 
@@ -243,17 +293,25 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                         try:
                             idx = int(msg.get("index"))
                         except Exception:
-                            await ws.send_json({"type": "error", "message": "Invalid index"})
+                            await ws.send_json(
+                                {"type": "error", "message": "Invalid index"}
+                            )
                             continue
                         if idx < 0 or idx >= len(ctrl.playlist):
-                            await ws.send_json({"type": "error", "message": "Index out of range"})
+                            await ws.send_json(
+                                {
+                                    "type": "error",
+                                    "message": "Index out of range",
+                                }
+                            )
                             continue
                         ctrl.index = idx
                         await _broadcast_player_state(ctrl)
                         continue
 
-                    await ws.send_json({"type": "error", "message": f"Unknown op: {op}"})
-
+                    await ws.send_json(
+                        {"type": "error", "message": f"Unknown op: {op}"}
+                    )
         except WebSocketDisconnect:
             pass
         finally:
@@ -336,6 +394,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             obj.is_admin = bool(payload.is_admin)
         if payload.is_blacklisted is not None:
             obj.is_blacklisted = bool(payload.is_blacklisted)
+        obj.last_active = datetime.now(UTC)
         s.commit()
         s.refresh(obj)
         return obj
@@ -348,6 +407,25 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         s.delete(obj)
         s.commit()
         return None
+
+    @app.post(
+        "/users/blacklist-by-username", response_model=BlacklistByUsernameOut
+    )
+    def blacklist_by_username(
+        payload: BlacklistByUsername, s: Session = Depends(get_session)
+    ) -> BlacklistByUsernameOut:
+        uname = (payload.username or "").strip().lstrip("@").lower()
+        if not uname:
+            return BlacklistByUsernameOut(updated=0)
+        stmt = select(User).where(User.username.is_not(None))
+        rows = [
+            u for u in s.scalars(stmt) if (u.username or "").lower() == uname
+        ]
+        for u in rows:
+            u.is_blacklisted = True
+            u.last_active = datetime.now(UTC)
+        s.commit()
+        return BlacklistByUsernameOut(updated=len(rows))
 
     # ---- Chats ----
 
@@ -386,9 +464,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.put("/chats/{chat_id}", response_model=ChatOut)
     def update_chat(
-        chat_id: int,
-        payload: ChatUpdate,
-        s: Session = Depends(get_session),
+        chat_id: int, payload: ChatUpdate, s: Session = Depends(get_session)
     ) -> Chat:
         obj = s.get(Chat, chat_id)
         if obj is None:
@@ -409,6 +485,22 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         s.delete(obj)
         s.commit()
         return None
+
+    @app.get("/chats/group-ids", response_model=list[int])
+    def list_group_chat_ids(s: Session = Depends(get_session)) -> list[int]:
+        stmt = select(Chat.chat_id).where(
+            Chat.type.in_(["group", "supergroup"])
+        )
+        return [int(cid) for cid in s.scalars(stmt)]
+
+    @app.get("/chats/group-count", response_model=CountOut)
+    def count_group_chats(s: Session = Depends(get_session)) -> CountOut:
+        stmt = (
+            select(Chat.chat_id)
+            .where(Chat.type.in_(["group", "supergroup"]))
+            .order_by(Chat.chat_id)
+        )
+        return CountOut(count=len(list(s.scalars(stmt))))
 
     # ---- Blacklist ----
 
@@ -442,8 +534,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         status_code=status.HTTP_201_CREATED,
     )
     def create_blacklist(
-        payload: BlacklistCreate,
-        s: Session = Depends(get_session),
+        payload: BlacklistCreate, s: Session = Depends(get_session)
     ) -> Blacklist:
         key = payload.tag.lstrip("@").lower()
         existing = s.get(Blacklist, key)
@@ -457,15 +548,14 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.put("/blacklist/{tag}", response_model=BlacklistOut)
     def update_blacklist(
-        tag: str,
-        payload: BlacklistUpdate,
-        s: Session = Depends(get_session),
+        tag: str, payload: BlacklistUpdate, s: Session = Depends(get_session)
     ) -> Blacklist:
         key = tag.lstrip("@").lower()
         obj = s.get(Blacklist, key)
         if obj is None:
             raise HTTPException(status_code=404, detail="Tag not found")
-        obj.note = payload.note
+        if payload.note is not None:
+            obj.note = payload.note
         s.commit()
         s.refresh(obj)
         return obj
@@ -502,9 +592,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.put("/settings/{key}", response_model=SettingOut)
     def upsert_setting(
-        key: str,
-        payload: SettingUpsert,
-        s: Session = Depends(get_session),
+        key: str, payload: SettingUpsert, s: Session = Depends(get_session)
     ) -> Setting:
         obj = s.get(Setting, key)
         if obj is None:
@@ -556,8 +644,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         status_code=status.HTTP_201_CREATED,
     )
     def create_spotify_track(
-        payload: SpotifyTrackCreate,
-        s: Session = Depends(get_session),
+        payload: SpotifyTrackCreate, s: Session = Depends(get_session)
     ) -> SpotifyTrack:
         obj = SpotifyTrack(
             spotify_id=payload.spotify_id,
@@ -571,7 +658,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             s.commit()
         except IntegrityError:
             s.rollback()
-            raise HTTPException(status_code=409, detail="Duplicate spotify_id")
+            raise HTTPException(status_code=409, detail="Track already exists")
         s.refresh(obj)
         return obj
 
@@ -584,13 +671,21 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         obj = s.get(SpotifyTrack, track_id)
         if obj is None:
             raise HTTPException(status_code=404, detail="Track not found")
+        if payload.spotify_id is not None:
+            obj.spotify_id = payload.spotify_id
         if payload.name is not None:
             obj.name = payload.name
         if payload.artist is not None:
             obj.artist = payload.artist
         if payload.url is not None:
             obj.url = payload.url
-        s.commit()
+        if payload.added_by is not None:
+            obj.added_by = int(payload.added_by)
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            raise HTTPException(status_code=409, detail="Track already exists")
         s.refresh(obj)
         return obj
 
@@ -606,6 +701,66 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         s.delete(obj)
         s.commit()
         return None
+
+    @app.get("/spotify-tracks/exists/{spotify_id}", response_model=ExistsOut)
+    def spotify_track_exists(
+        spotify_id: str, s: Session = Depends(get_session)
+    ) -> ExistsOut:
+        stmt = (
+            select(SpotifyTrack.id)
+            .where(SpotifyTrack.spotify_id == spotify_id)
+            .limit(1)
+        )
+        return ExistsOut(exists=(s.scalar(stmt) is not None))
+
+    @app.get(
+        "/spotify-tracks/count-by-user/{user_id}", response_model=CountOut
+    )
+    def spotify_tracks_count_by_user(
+        user_id: int, s: Session = Depends(get_session)
+    ) -> CountOut:
+        stmt = (
+            select(SpotifyTrack.id)
+            .where(SpotifyTrack.added_by == user_id)
+            .order_by(SpotifyTrack.id)
+        )
+        return CountOut(count=len(list(s.scalars(stmt))))
+
+    @app.get(
+        "/spotify-tracks/by-user/{user_id}",
+        response_model=list[SpotifyTrackOut],
+    )
+    def list_spotify_tracks_by_user(
+        user_id: int,
+        limit: int = 20,
+        s: Session = Depends(get_session),
+    ) -> list[SpotifyTrack]:
+        stmt = (
+            select(SpotifyTrack)
+            .where(SpotifyTrack.added_by == user_id)
+            .order_by(SpotifyTrack.added_at.desc(), SpotifyTrack.id.desc())
+            .limit(limit)
+        )
+        return list(s.scalars(stmt))
+
+    @app.delete(
+        "/spotify-tracks/by-user/{user_id}/{spotify_id}",
+        response_model=DeletedOut,
+    )
+    def delete_spotify_track_by_user(
+        user_id: int,
+        spotify_id: str,
+        s: Session = Depends(get_session),
+    ) -> DeletedOut:
+        stmt = select(SpotifyTrack).where(
+            SpotifyTrack.added_by == user_id,
+            SpotifyTrack.spotify_id == spotify_id,
+        )
+        rows = list(s.scalars(stmt))
+        for r in rows:
+            s.delete(r)
+        s.commit()
+        return DeletedOut(deleted=len(rows))
 
     return app
 

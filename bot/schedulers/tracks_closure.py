@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from aiogram import Bot
 
-from bot.db import ChatRepo, SettingsRepo
+from bot.api_repos import ChatRepo, SettingsRepo
 
 
 _LOG = logging.getLogger("tracks_closure")

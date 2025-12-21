@@ -5,12 +5,13 @@ from typing import List
 
 from aiogram import Router
 
-from .interfaces import ContestPlugin
+from .interfaces import ContestPlugin, SystemPlugin
 
 
 class PluginRegistry:
     def __init__(self):
         self.plugins: List[ContestPlugin] = []
+        self.system_plugins: List[SystemPlugin] = []
         self._log = logging.getLogger(self.__class__.__name__)
 
     def load_contest_plugins(self) -> None:
@@ -41,8 +42,42 @@ class PluginRegistry:
                 getattr(instance, 'slug', 'n/a'),
             )
 
+    def load_system_plugins(self) -> None:
+        base_pkg = 'bot.plugins.system'
+        try:
+            pkg = importlib.import_module(base_pkg)
+        except ModuleNotFoundError:
+            self._log.info("No system plugins package found: %s", base_pkg)
+            return
+
+        for finder, name, ispkg in pkgutil.iter_modules(pkg.__path__, prefix=f"{base_pkg}."):
+            plugin_module_name = f"{name}.plugin"
+            try:
+                mod = importlib.import_module(plugin_module_name)
+            except ModuleNotFoundError:
+                self._log.warning("System plugin module not found: %s", plugin_module_name)
+                continue
+            if not hasattr(mod, 'Plugin'):
+                self._log.warning("Plugin class not found in module: %s", plugin_module_name)
+                continue
+            plugin = getattr(mod, 'Plugin')
+            instance: SystemPlugin = plugin()
+            self.system_plugins.append(instance)
+            self._log.info(
+                "Loaded system plugin: %s",
+                getattr(instance, 'name', 'unknown'),
+            )
+
+    def load_all_plugins(self) -> None:
+        self.load_contest_plugins()
+        self.load_system_plugins()
+
     def register_all(self, user_router: Router, admin_router: Router) -> None:
         for p in self.plugins:
+            p.register_user(user_router)
+            p.register_admin(admin_router)
+
+        for p in self.system_plugins:
             p.register_user(user_router)
             p.register_admin(admin_router)
 
