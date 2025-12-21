@@ -7,7 +7,12 @@ from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from bot.api_repos import (
     ApiSettings,
@@ -19,7 +24,9 @@ from bot.api_repos import (
 )
 from bot.config import load_config
 from bot.integrations.spotify_client import SpotifyClient
-from bot.plugins.system.tracks.tracks_closure import run_tracks_closure_scheduler
+from bot.plugins.system.tracks.tracks_closure import (
+    run_tracks_closure_scheduler,
+)
 
 
 _LOG = logging.getLogger("tracks")
@@ -50,7 +57,10 @@ def _is_closed(settings: SettingsRepo) -> tuple[bool, int | None]:
 
 def _closed_text(close_ts: int) -> str:
     dt = datetime.fromtimestamp(close_ts, tz=timezone.utc)
-    return "Список треков закрыт для изменений.\n" f"Время закрытия (UTC): {dt:%Y-%m-%d %H:%M}"
+    return (
+        "Список треков закрыт для изменений.\n"
+        f"Время закрытия (UTC): {dt:%Y-%m-%d %H:%M}"
+    )
 
 
 def _get_max_tracks_per_user(settings: SettingsRepo, *, fallback: int) -> int:
@@ -78,7 +88,9 @@ def _confirm_kb(spotify_id: str) -> InlineKeyboardMarkup:
                     text="✅ Да, добавить",
                     callback_data=f"track:add:{spotify_id}",
                 ),
-                InlineKeyboardButton(text="❌ Нет", callback_data="track:cancel"),
+                InlineKeyboardButton(
+                    text="❌ Нет", callback_data="track:cancel"
+                ),
             ]
         ]
     )
@@ -120,14 +132,19 @@ class Plugin:
         self._settings = SettingsRepo(api)
         self._tracks = SpotifyTracksRepo(api)
         self._chats = ChatRepo(api)
-        self._spotify = SpotifyClient(cfg.spotify_client_id, cfg.spotify_client_secret)
+        self._spotify = SpotifyClient(
+            cfg.spotify_client_id, cfg.spotify_client_secret
+        )
         self._max_tracks_per_user = int(cfg.max_tracks_per_user)
         self._admin_id = int(cfg.admin_id)
 
         self._scheduler_task: asyncio.Task[None] | None = None
 
     def start(self, bot: Bot) -> asyncio.Task[None] | None:
-        if self._scheduler_task is not None and not self._scheduler_task.done():
+        if (
+            self._scheduler_task is not None
+            and not self._scheduler_task.done()
+        ):
             return self._scheduler_task
 
         self._scheduler_task = asyncio.create_task(
@@ -138,7 +155,9 @@ class Plugin:
     def register_user(self, router: Router) -> None:
         _LOG.info("Tracks plugin registered: /track /mytracks")
 
-        async def _handle_query(message: Message, state: FSMContext, query: str) -> None:
+        async def _handle_query(
+            message: Message, state: FSMContext, query: str
+        ) -> None:
             closed, close_ts = _is_closed(self._settings)
             if closed and close_ts is not None:
                 await message.answer(_closed_text(close_ts))
@@ -163,7 +182,10 @@ class Plugin:
             max_tracks = _get_max_tracks_per_user(
                 self._settings, fallback=self._max_tracks_per_user
             )
-            if max_tracks != 0 and self._tracks.count_by_user(user_id) >= max_tracks:
+            if (
+                max_tracks != 0
+                and self._tracks.count_by_user(user_id) >= max_tracks
+            ):
                 await message.answer(
                     f"Лимит треков: {max_tracks}. "
                     "Сначала удалите один из своих треков через /mytracks."
@@ -184,7 +206,9 @@ class Plugin:
                         return
 
                 if self._tracks.exists_spotify_id(track.spotify_id):
-                    await message.answer("Этот трек уже кто-то добавил. Попробуй другой.")
+                    await message.answer(
+                        "Этот трек уже кто-то добавил. Попробуй другой."
+                    )
                     return
 
                 await state.update_data(
@@ -197,11 +221,15 @@ class Plugin:
                 )
                 await state.set_state(_TrackStates.waiting_confirm)
 
-                text = f"Нашёл трек:\n<b>{track.artist}</b> — <b>{track.name}</b>"
+                text = (
+                    f"Нашёл трек:\n<b>{track.artist}</b> — <b>{track.name}</b>"
+                )
                 if track.url:
                     text += f"\n{track.url}"
                 text += "\n\nЭто тот трек?"
-                await message.answer(text, reply_markup=_confirm_kb(track.spotify_id))
+                await message.answer(
+                    text, reply_markup=_confirm_kb(track.spotify_id)
+                )
 
                 _LOG.info(
                     "Candidate track prepared user_id=%s spotify_id=%s",
@@ -210,7 +238,9 @@ class Plugin:
                 )
             except Exception as e:
                 _LOG.warning("Spotify lookup failed: %s", e)
-                await message.answer("Ошибка при поиске Spotify. Попробуйте позже.")
+                await message.answer(
+                    "Ошибка при поиске Spotify. Попробуйте позже."
+                )
 
         @router.message(Command("track"), F.chat.type == ChatType.PRIVATE)
         async def cmd_track(message: Message, state: FSMContext) -> None:
@@ -247,7 +277,9 @@ class Plugin:
                     "Отправьте ссылку Spotify или название трека (можно с исполнителем)."
                 )
 
-        @router.message(_TrackStates.waiting_query, F.chat.type == ChatType.PRIVATE)
+        @router.message(
+            _TrackStates.waiting_query, F.chat.type == ChatType.PRIVATE
+        )
         async def got_query(message: Message, state: FSMContext) -> None:
             await _handle_query(message, state, message.text or "")
 
@@ -256,7 +288,9 @@ class Plugin:
             await state.clear()
             await cb.answer("Отменено")
             if cb.message:
-                await cb.message.answer("Ок, отменил. Чтобы добавить заново: /track")
+                await cb.message.answer(
+                    "Ок, отменил. Чтобы добавить заново: /track"
+                )
 
         @router.callback_query(F.data.startswith("track:add:"))
         async def confirm_add(cb: CallbackQuery, state: FSMContext) -> None:
@@ -293,7 +327,10 @@ class Plugin:
             max_tracks = _get_max_tracks_per_user(
                 self._settings, fallback=self._max_tracks_per_user
             )
-            if max_tracks != 0 and self._tracks.count_by_user(cb.from_user.id) >= max_tracks:
+            if (
+                max_tracks != 0
+                and self._tracks.count_by_user(cb.from_user.id) >= max_tracks
+            ):
                 await cb.answer("Лимит")
                 if cb.message:
                     await cb.message.answer(
@@ -318,7 +355,9 @@ class Plugin:
 
             await cb.answer("Добавлено")
             if cb.message:
-                await cb.message.answer("Готово! Трек добавлен в общий список.")
+                await cb.message.answer(
+                    "Готово! Трек добавлен в общий список."
+                )
 
         @router.message(Command("mytracks"), F.chat.type == ChatType.PRIVATE)
         async def mytracks(message: Message) -> None:
@@ -334,25 +373,28 @@ class Plugin:
             )
 
             list_limit = 50 if max_tracks == 0 else max_tracks
-            rows = self._tracks.list_by_user(message.from_user.id, limit=list_limit)
+            rows = self._tracks.list_by_user(
+                message.from_user.id, limit=list_limit
+            )
             if not rows:
-                await message.answer("У вас пока нет добавленных треков. Добавить: /track")
+                await message.answer(
+                    "У вас пока нет добавленных треков. Добавить: /track"
+                )
                 return
             if max_tracks == 0:
-                await message.answer(
-                    f"Ваши треки: {len(rows)}"
-                )
+                await message.answer(f"Ваши треки: {len(rows)}")
             else:
-                await message.answer(f"Ваши треки (лимит: {max_tracks}): {len(rows)}")
+                await message.answer(
+                    f"Ваши треки (лимит: {max_tracks}): {len(rows)}"
+                )
             for r in rows:
-                spotify_id, name, artist, url, added_at = (
+                spotify_id, name, artist, url = (
                     r[0],
                     r[1],
                     r[2],
                     r[3],
-                    r[4],
                 )
-                text = f"<b>{artist}</b> — <b>{name}</b>\n{url or ''}\nДобавлен: {added_at}"
+                text = f"<b>{artist}</b> — <b>{name}</b>\n{url or ''}\n"
                 await message.answer(text, reply_markup=_delete_kb(spotify_id))
 
         @router.callback_query(F.data.startswith("track:del:"))
@@ -380,7 +422,9 @@ class Plugin:
                     await cb.message.answer("Не нашёл этот трек среди ваших.")
 
     def register_admin(self, router: Router) -> None:
-        @router.message(Command("tracks_limit"), F.chat.type == ChatType.PRIVATE)
+        @router.message(
+            Command("tracks_limit"), F.chat.type == ChatType.PRIVATE
+        )
         async def tracks_limit(message: Message) -> None:
             if not message.from_user or message.from_user.id != self._admin_id:
                 return
@@ -389,7 +433,9 @@ class Plugin:
 
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
-                raw = (self._settings.get(_MAX_TRACKS_PER_USER_KEY, "") or "").strip()
+                raw = (
+                    self._settings.get(_MAX_TRACKS_PER_USER_KEY, "") or ""
+                ).strip()
                 if raw == "0":
                     cur = "без ограничений"
                 elif raw:
@@ -415,10 +461,16 @@ class Plugin:
 
             self._settings.set(_MAX_TRACKS_PER_USER_KEY, str(n))
             if n == 0:
-                await message.answer("Готово. Теперь лимита треков на пользователя нет.")
+                await message.answer(
+                    "Готово. Теперь лимита треков на пользователя нет."
+                )
             else:
-                await message.answer(f"Готово. Лимит треков на пользователя: {n}")
-            _LOG.info("Tracks limit set to %s by admin_id=%s", n, self._admin_id)
+                await message.answer(
+                    f"Готово. Лимит треков на пользователя: {n}"
+                )
+            _LOG.info(
+                "Tracks limit set to %s by admin_id=%s", n, self._admin_id
+            )
 
         @router.callback_query(F.data == _TRACKS_ADMIN_CB)
         async def admin_tracks(cb: CallbackQuery) -> None:
