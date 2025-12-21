@@ -22,7 +22,7 @@ def load_config() -> Config:
     database_url = os.getenv("DATABASE_URL", "").strip()
     spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
-    max_tracks_str = os.getenv("MAX_TRACKS_PER_USER", "5").strip()
+    max_tracks_str = os.getenv("MAX_TRACKS_PER_USER", "3").strip()
 
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in environment")

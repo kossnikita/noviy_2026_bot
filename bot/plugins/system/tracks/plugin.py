@@ -327,7 +327,9 @@ class Plugin:
             )
             if message.from_user is None:
                 return
-            limit = 20
+            limit = _get_max_tracks_per_user(
+                self._settings, fallback=self._max_tracks_per_user
+            )
             rows = self._tracks.list_by_user(message.from_user.id, limit=limit)
             if not rows:
                 await message.answer("У вас пока нет добавленных треков. Добавить: /track")
