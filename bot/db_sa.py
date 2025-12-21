@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 logger = logging.getLogger("db")
@@ -103,7 +104,17 @@ class Db:
 
 def create_db(database_url: str, db_path: str) -> Db:
     url = build_database_url(database_url, db_path)
-    engine = create_engine(url, future=True)
+    engine_kwargs = {"future": True}
+    # SQLite in-memory DB is per-connection by default. For tests we need a single
+    # shared connection so that `Base.metadata.create_all()` is visible to sessions.
+    if url.startswith("sqlite") and (":memory:" in url or "mode=memory" in url):
+        engine_kwargs.update(
+            {
+                "connect_args": {"check_same_thread": False},
+                "poolclass": StaticPool,
+            }
+        )
+    engine = create_engine(url, **engine_kwargs)
     SessionFactory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
     logger.info("SQLAlchemy engine created: %s", url)
     return Db(engine=engine, session_factory=SessionFactory)

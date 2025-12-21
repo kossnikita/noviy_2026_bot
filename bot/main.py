@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -28,6 +29,32 @@ from bot.routers.tracks import setup_tracks_router
 from bot.middlewares.command_logging import CommandLoggingMiddleware
 from bot.middlewares.registration_required import RegistrationRequiredMiddleware
 from bot.routers.unknown_commands import setup_unknown_commands_router
+from bot.schedulers.tracks_closure import run_tracks_closure_scheduler
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    val = (os.getenv(name) or "").strip().lower()
+    if not val:
+        return default
+    return val in {"1", "true", "yes", "y", "on"}
+
+
+async def _run_api_server(*, db, host: str, port: int) -> None:
+    import uvicorn
+
+    from bot.api.app import create_app
+
+    app = create_app(db=db)
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=False,
+        log_config=None,
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 async def main() -> None:
@@ -73,7 +100,12 @@ async def main() -> None:
     common_router = setup_common_router(users, cfg.admin_id, settings, blacklist)
     admin_router = setup_admin_router(users, chats, cfg.admin_id, blacklist, settings)
     group_router = setup_group_router(chats, users)
-    tracks_router = setup_tracks_router(tracks_repo, spotify, cfg.max_tracks_per_user)
+    tracks_router = setup_tracks_router(
+        tracks_repo,
+        spotify,
+        cfg.max_tracks_per_user,
+        settings,
+    )
     unknown_router = setup_unknown_commands_router()
 
     # Let plugins register their handlers into the same routers
@@ -96,6 +128,7 @@ async def main() -> None:
         admin_commands = [
             BotCommand(command="admin", description="Админ-панель"),
             BotCommand(command="announce", description="Объявление в группы"),
+            BotCommand(command="tracks_close", description="Закрыть изменения треков"),
             BotCommand(command="blacklist_add", description="ЧС: добавить тег"),
             BotCommand(command="blacklist_remove", description="ЧС: удалить тег"),
             BotCommand(command="blacklist_list", description="ЧС: список"),
@@ -134,8 +167,31 @@ async def main() -> None:
     )
     logger.info("Starting polling...")
 
-    await dp.start_polling(bot)
-    logger.info("Polling stopped.")
+    api_task: asyncio.Task[None] | None = None
+    if _env_flag("API_ENABLED", default=False):
+        api_host = (os.getenv("API_HOST") or "0.0.0.0").strip()
+        api_port = int((os.getenv("API_PORT") or "8000").strip())
+        logger.info("Starting FastAPI server on %s:%s", api_host, api_port)
+        api_task = asyncio.create_task(
+            _run_api_server(db=db, host=api_host, port=api_port)
+        )
+
+    scheduler_task = asyncio.create_task(
+        run_tracks_closure_scheduler(bot, settings, chats)
+    )
+    try:
+        await dp.start_polling(bot)
+    finally:
+        if api_task is not None:
+            api_task.cancel()
+        scheduler_task.cancel()
+        try:
+            if api_task is not None:
+                await api_task
+            await scheduler_task
+        except Exception:
+            pass
+        logger.info("Polling stopped.")
 
 
 if __name__ == "__main__":

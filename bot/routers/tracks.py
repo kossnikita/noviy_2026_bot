@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from aiogram import Router, F
 from aiogram.enums import ChatType
@@ -12,8 +13,37 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-from bot.db import SpotifyTracksRepo
+from bot.db import SettingsRepo, SpotifyTracksRepo
 from bot.integrations.spotify_client import SpotifyClient
+
+
+_TRACKS_CLOSE_TS_KEY = "tracks_close_at_ts"
+
+
+def _get_close_ts(settings: SettingsRepo) -> int | None:
+    raw = (settings.get(_TRACKS_CLOSE_TS_KEY, "") or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _is_closed(settings: SettingsRepo) -> tuple[bool, int | None]:
+    close_ts = _get_close_ts(settings)
+    if close_ts is None:
+        return (False, None)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    return (now_ts >= close_ts, close_ts)
+
+
+def _closed_text(close_ts: int) -> str:
+    dt = datetime.fromtimestamp(close_ts, tz=timezone.utc)
+    return (
+        "Список треков закрыт для изменений.\n"
+        f"Время закрытия (UTC): {dt:%Y-%m-%d %H:%M}"
+    )
 
 
 class TrackStates(StatesGroup):
@@ -54,6 +84,7 @@ def setup_tracks_router(
     tracks_repo: SpotifyTracksRepo,
     spotify: SpotifyClient,
     max_tracks_per_user: int,
+    settings_repo: SettingsRepo,
 ) -> Router:
     router = Router(name="tracks")
     logger = logging.getLogger("tracks")
@@ -61,6 +92,19 @@ def setup_tracks_router(
     logger.info("Tracks commands registered: /track /mytracks")
 
     async def _handle_query(message: Message, state: FSMContext, query: str):
+
+        closed, close_ts = _is_closed(settings_repo)
+        if closed and close_ts is not None:
+            await message.answer(_closed_text(close_ts))
+            return
+
+        # Если query начинается с / (вдруг), игнорируем
+        if query.startswith("/"):
+            await message.answer(
+                "Пожалуйста, отправьте ссылку Spotify или название трека, а не команду."
+            )
+            return
+
         if not spotify.is_configured():
             await message.answer(
                 "Spotify не настроен. Нужны SPOTIFY_CLIENT_ID и SPOTIFY_CLIENT_SECRET."
@@ -135,6 +179,10 @@ def setup_tracks_router(
         )
         args = (message.text or "").split(maxsplit=1)
         if len(args) == 1:
+            closed, close_ts = _is_closed(settings_repo)
+            if closed and close_ts is not None:
+                await message.answer(_closed_text(close_ts))
+                return
             await state.set_state(TrackStates.waiting_query)
             await message.answer(
                 "Отправьте ссылку Spotify или название трека (можно с исполнителем)."
@@ -162,6 +210,14 @@ def setup_tracks_router(
             return
         if not cb.data:
             await cb.answer()
+            return
+
+        closed, close_ts = _is_closed(settings_repo)
+        if closed and close_ts is not None:
+            await cb.answer("Закрыто", show_alert=True)
+            if cb.message:
+                await cb.message.answer(_closed_text(close_ts))
+            await state.clear()
             return
         data = await state.get_data()
         cand = (data or {}).get("candidate")
@@ -248,6 +304,14 @@ def setup_tracks_router(
         if not cb.data:
             await cb.answer()
             return
+
+        closed, close_ts = _is_closed(settings_repo)
+        if closed and close_ts is not None:
+            await cb.answer("Закрыто", show_alert=True)
+            if cb.message:
+                await cb.message.answer(_closed_text(close_ts))
+            return
+
         spotify_id = cb.data.split(":", 2)[2]
         deleted = tracks_repo.delete_by_user(cb.from_user.id, spotify_id)
         if deleted:
