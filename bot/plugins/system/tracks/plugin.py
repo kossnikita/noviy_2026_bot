@@ -25,6 +25,7 @@ from bot.plugins.system.tracks.tracks_closure import run_tracks_closure_schedule
 _LOG = logging.getLogger("tracks")
 
 _TRACKS_CLOSE_TS_KEY = "tracks_close_at_ts"
+_MAX_TRACKS_PER_USER_KEY = "max_tracks_per_user"
 _TRACKS_ADMIN_CB = "tracks:admin"
 _TRACKS_MENU_CB = "tracks:menu"
 
@@ -50,6 +51,17 @@ def _is_closed(settings: SettingsRepo) -> tuple[bool, int | None]:
 def _closed_text(close_ts: int) -> str:
     dt = datetime.fromtimestamp(close_ts, tz=timezone.utc)
     return "Список треков закрыт для изменений.\n" f"Время закрытия (UTC): {dt:%Y-%m-%d %H:%M}"
+
+
+def _get_max_tracks_per_user(settings: SettingsRepo, *, fallback: int) -> int:
+    raw = (settings.get(_MAX_TRACKS_PER_USER_KEY, "") or "").strip()
+    try:
+        v = int(raw)
+        if v > 0:
+            return v
+    except Exception:
+        pass
+    return int(fallback)
 
 
 class _TrackStates(StatesGroup):
@@ -146,9 +158,12 @@ class Plugin:
                 return
 
             user_id = message.from_user.id
-            if self._tracks.count_by_user(user_id) >= self._max_tracks_per_user:
+            max_tracks = _get_max_tracks_per_user(
+                self._settings, fallback=self._max_tracks_per_user
+            )
+            if self._tracks.count_by_user(user_id) >= max_tracks:
                 await message.answer(
-                    f"Лимит треков: {self._max_tracks_per_user}. "
+                    f"Лимит треков: {max_tracks}. "
                     "Сначала удалите один из своих треков через /mytracks."
                 )
                 return
@@ -273,11 +288,14 @@ class Plugin:
                 await state.clear()
                 return
 
-            if self._tracks.count_by_user(cb.from_user.id) >= self._max_tracks_per_user:
+            max_tracks = _get_max_tracks_per_user(
+                self._settings, fallback=self._max_tracks_per_user
+            )
+            if self._tracks.count_by_user(cb.from_user.id) >= max_tracks:
                 await cb.answer("Лимит")
                 if cb.message:
                     await cb.message.answer(
-                        f"Лимит треков: {self._max_tracks_per_user}. Удалите один через /mytracks."
+                        f"Лимит треков: {max_tracks}. Удалите один через /mytracks."
                     )
                 await state.clear()
                 return
@@ -309,12 +327,12 @@ class Plugin:
             )
             if message.from_user is None:
                 return
-            rows = self._tracks.list_by_user(message.from_user.id, limit=20)
+            limit = 20
+            rows = self._tracks.list_by_user(message.from_user.id, limit=limit)
             if not rows:
                 await message.answer("У вас пока нет добавленных треков. Добавить: /track")
                 return
-
-            await message.answer(f"Ваши треки (до 20): {len(rows)}")
+            await message.answer(f"Ваши треки (до {limit}): {len(rows)}")
             for r in rows:
                 spotify_id, name, artist, url, added_at = (
                     r[0],
@@ -355,6 +373,9 @@ class Plugin:
         async def admin_tracks(cb: CallbackQuery) -> None:
             await cb.answer()
             close_ts = _get_close_ts(self._settings)
+            max_tracks = _get_max_tracks_per_user(
+                self._settings, fallback=self._max_tracks_per_user
+            )
             if close_ts is None:
                 status = "Закрытие списка треков: не задано"
             else:
@@ -363,6 +384,7 @@ class Plugin:
                 await cb.message.answer(
                     "Треки:\n"
                     f"{status}\n\n"
+                    f"Лимит треков на пользователя: {max_tracks}\n\n"
                     "Команды:\n"
                     "- /tracks_close &lt;время&gt; (UTC) — задать закрытие\n"
                     "- /mytracks — ваши треки\n"

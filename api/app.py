@@ -105,6 +105,8 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     _DEFAULT_SETTINGS: dict[str, str] = {
         # Common bot behavior toggles
         "allow_new_users": "1",
+        # Tracks feature
+        "max_tracks_per_user": "5",
         # Tracks closure feature (empty means "not scheduled")
         "tracks_close_at_ts": "",
         "tracks_close_announced_for_ts": "0",

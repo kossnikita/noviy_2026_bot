@@ -11,7 +11,7 @@ class Config:
     database_url: str = ""
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
-    max_tracks_per_user: int = 5
+    max_tracks_per_user: int = 3
 
 
 def load_config() -> Config:
