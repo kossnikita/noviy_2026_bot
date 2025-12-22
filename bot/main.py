@@ -28,6 +28,9 @@ from bot.routers.admin import setup_admin_router
 from bot.routers.group_events import setup_group_router
 from bot.middlewares.activity import ActivityMiddleware
 from bot.middlewares.command_logging import CommandLoggingMiddleware
+from bot.middlewares.clear_tracks_wait_on_command import (
+    ClearTracksWaitOnCommandMiddleware,
+)
 from bot.middlewares.registration_required import RegistrationRequiredMiddleware
 from bot.routers.unknown_commands import setup_unknown_commands_router
 
@@ -106,6 +109,8 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
     # Log command invocations (/start, /track, etc.)
     dp.message.middleware(CommandLoggingMiddleware())
+    # If user is in tracks "waiting" state and sends a command, drop that state
+    dp.message.middleware(ClearTracksWaitOnCommandMiddleware())
     # Block any private actions until user ran /start and is in DB
     dp.message.middleware(RegistrationRequiredMiddleware(users))
     # Touch user activity for any message/callback via middleware (non-blocking)

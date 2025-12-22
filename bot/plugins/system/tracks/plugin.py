@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from aiogram import Bot, F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -35,6 +36,9 @@ _TRACKS_CLOSE_TS_KEY = "tracks_close_at_ts"
 _MAX_TRACKS_PER_USER_KEY = "max_tracks_per_user"
 _TRACKS_ADMIN_CB = "tracks:admin"
 _TRACKS_MENU_CB = "tracks:menu"
+
+_WAIT_QUERY_TIMEOUT_S = 180
+_WAIT_CONFIRM_TIMEOUT_S = 180
 
 
 def _get_close_ts(settings: SettingsRepo) -> int | None:
@@ -140,6 +144,40 @@ class Plugin:
 
         self._scheduler_task: asyncio.Task[None] | None = None
 
+        self._state_timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
+
+    def _cancel_state_timeout(self, key: tuple[int, int]) -> None:
+        t = self._state_timeout_tasks.pop(key, None)
+        if t is not None:
+            t.cancel()
+
+    def _arm_state_timeout(
+        self,
+        *,
+        key: tuple[int, int],
+        state: FSMContext,
+        expected_state: str,
+        timeout_s: int,
+    ) -> None:
+        self._cancel_state_timeout(key)
+
+        async def _job() -> None:
+            try:
+                await asyncio.sleep(timeout_s)
+                cur = await state.get_state()
+                if cur == expected_state:
+                    await state.clear()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _LOG.exception("State timeout job failed")
+            finally:
+                if self._state_timeout_tasks.get(key) is task:
+                    self._state_timeout_tasks.pop(key, None)
+
+        task = asyncio.create_task(_job())
+        self._state_timeout_tasks[key] = task
+
     def start(self, bot: Bot) -> asyncio.Task[None] | None:
         if (
             self._scheduler_task is not None
@@ -170,8 +208,9 @@ class Plugin:
                 return
 
             if not self._spotify.is_configured():
+                _LOG.error("Spotify client not configured")
                 await message.answer(
-                    "Spotify не настроен. Нужны SPOTIFY_CLIENT_ID и SPOTIFY_CLIENT_SECRET."
+                    "Spotify не настроен. Сообщите администратору."
                 )
                 return
 
@@ -186,6 +225,9 @@ class Plugin:
                 max_tracks != 0
                 and self._tracks.count_by_user(user_id) >= max_tracks
             ):
+                _LOG.debug(
+                    "User %s reached max tracks limit %s", user_id, max_tracks
+                )
                 await message.answer(
                     f"Лимит треков: {max_tracks}. "
                     "Сначала удалите один из своих треков через /mytracks."
@@ -221,6 +263,17 @@ class Plugin:
                 )
                 await state.set_state(_TrackStates.waiting_confirm)
 
+                try:
+                    key = (message.chat.id, user_id)
+                    self._arm_state_timeout(
+                        key=key,
+                        state=state,
+                        expected_state=_TrackStates.waiting_confirm.state,
+                        timeout_s=_WAIT_CONFIRM_TIMEOUT_S,
+                    )
+                except Exception:
+                    _LOG.exception("Failed to arm confirm timeout")
+
                 text = (
                     f"Нашёл трек:\n<b>{track.artist}</b> — <b>{track.name}</b>"
                 )
@@ -252,15 +305,24 @@ class Plugin:
             )
             args = (message.text or "").split(maxsplit=1)
             if len(args) == 1:
+                # No query provided yet
                 closed, close_ts = _is_closed(self._settings)
                 if closed and close_ts is not None:
                     await message.answer(_closed_text(close_ts))
                     return
                 await state.set_state(_TrackStates.waiting_query)
+                if message.from_user is not None:
+                    self._arm_state_timeout(
+                        key=(message.chat.id, message.from_user.id),
+                        state=state,
+                        expected_state=_TrackStates.waiting_query.state,
+                        timeout_s=_WAIT_QUERY_TIMEOUT_S,
+                    )
                 await message.answer(
                     "Отправьте ссылку Spotify или название трека (можно с исполнителем)."
                 )
                 return
+            # Query provided as command argument
             await _handle_query(message, state, args[1])
 
         @router.callback_query(F.data == _TRACKS_MENU_CB)
@@ -272,19 +334,63 @@ class Plugin:
                     await cb.message.answer(_closed_text(close_ts))
                 return
             await state.set_state(_TrackStates.waiting_query)
+            if cb.message and cb.from_user:
+                self._arm_state_timeout(
+                    key=(cb.message.chat.id, cb.from_user.id),
+                    state=state,
+                    expected_state=_TrackStates.waiting_query.state,
+                    timeout_s=_WAIT_QUERY_TIMEOUT_S,
+                )
             if cb.message:
                 await cb.message.answer(
                     "Отправьте ссылку Spotify или название трека (можно с исполнителем)."
                 )
 
         @router.message(
-            _TrackStates.waiting_query, F.chat.type == ChatType.PRIVATE
+            _TrackStates.waiting_query,
+            F.chat.type == ChatType.PRIVATE,
+            F.text,
+            F.text.startswith("/"),
+        )
+        async def command_while_waiting_query(
+            message: Message, state: FSMContext
+        ) -> None:
+            if message.from_user is None:
+                raise SkipHandler
+            self._cancel_state_timeout((message.chat.id, message.from_user.id))
+            await state.clear()
+            raise SkipHandler
+
+        @router.message(
+            _TrackStates.waiting_confirm,
+            F.chat.type == ChatType.PRIVATE,
+            F.text,
+            F.text.startswith("/"),
+        )
+        async def command_while_waiting_confirm(
+            message: Message, state: FSMContext
+        ) -> None:
+            if message.from_user is None:
+                raise SkipHandler
+            self._cancel_state_timeout((message.chat.id, message.from_user.id))
+            await state.clear()
+            raise SkipHandler
+
+        @router.message(
+            _TrackStates.waiting_query,
+            F.chat.type == ChatType.PRIVATE,
+            F.text,
+            ~F.text.startswith("/"),
         )
         async def got_query(message: Message, state: FSMContext) -> None:
+            if message.from_user is not None:
+                self._cancel_state_timeout((message.chat.id, message.from_user.id))
             await _handle_query(message, state, message.text or "")
 
         @router.callback_query(F.data == "track:cancel")
         async def cancel(cb: CallbackQuery, state: FSMContext) -> None:
+            if cb.message and cb.from_user:
+                self._cancel_state_timeout((cb.message.chat.id, cb.from_user.id))
             await state.clear()
             await cb.answer("Отменено")
             if cb.message:
@@ -297,6 +403,9 @@ class Plugin:
             if not cb.from_user or not cb.data:
                 await cb.answer()
                 return
+
+            if cb.message:
+                self._cancel_state_timeout((cb.message.chat.id, cb.from_user.id))
 
             closed, close_ts = _is_closed(self._settings)
             if closed and close_ts is not None:
