@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.responses import Response
 
 from api.db import Db, init_db
@@ -139,6 +140,25 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     def _hash_token(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+    def _describe_db_source(*, database_url: str, db_path: str) -> str:
+        # Keep it short and avoid secrets.
+        if database_url:
+            # Mask password, if present.
+            try:
+                from urllib.parse import urlsplit, urlunsplit
+
+                u = urlsplit(database_url)
+                netloc = u.netloc
+                if "@" in netloc:
+                    creds, host = netloc.rsplit("@", 1)
+                    if ":" in creds:
+                        user = creds.split(":", 1)[0]
+                        netloc = f"{user}:***@{host}"
+                return urlunsplit((u.scheme, netloc, u.path, u.query, u.fragment))
+            except Exception:
+                return "<database_url>"
+        return f"sqlite:///{db_path}"
+
     def _extract_http_token(request: Request) -> str | None:
         auth = (request.headers.get("authorization") or "").strip()
         if auth.lower().startswith("bearer "):
@@ -172,28 +192,23 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             except IntegrityError:
                 s.rollback()
 
-    def _require_token_or_401(request: Request) -> None:
+    def _check_token(request: Request) -> tuple[bool, str | None, str | None]:
         token = _extract_http_token(request)
         if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing API token",
-            )
+            return (False, "Missing API token", None)
         token_hash = _hash_token(token)
         with request.app.state.db.session() as s:
             row = s.scalar(
                 select(ApiToken).where(ApiToken.token_hash == token_hash)
             )
             if row is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid API token",
-                )
+                return (False, "Invalid API token", None)
             try:
                 row.last_used_at = datetime.now(UTC)
                 s.commit()
             except Exception:
                 s.rollback()
+        return (True, None, token_hash)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -202,7 +217,10 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             database_url = (os.getenv("DATABASE_URL") or "").strip()
             db_path = (os.getenv("DB_PATH") or "database.sqlite3").strip()
             app.state.db = init_db(database_url=database_url, db_path=db_path)
-            logger.info("DB initialized for API (db_path=%s)", db_path)
+            logger.info(
+                "DB initialized for API (%s)",
+                _describe_db_source(database_url=database_url, db_path=db_path),
+            )
         else:
             app.state.db = db
             logger.info("DB injected for API")
@@ -230,7 +248,12 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next) -> Response:
-        _require_token_or_401(request)
+        ok, err, _token_hash = _check_token(request)
+        if not ok:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": err or "Unauthorized"},
+            )
         return await call_next(request)
 
     @app.middleware("http")

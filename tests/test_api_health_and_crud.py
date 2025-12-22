@@ -22,11 +22,25 @@ def _client():
     return c
 
 
+def _client_no_auth():
+    db = create_db(database_url="sqlite+pysqlite:///:memory:", db_path=":memory:")
+    Base.metadata.create_all(db.engine)
+    app = create_app(db=db)
+    return TestClient(app)
+
+
 def test_health():
     c = _client()
     r = c.get("/health")
     assert r.status_code == 200
     assert r.json()["ok"] is True
+
+
+def test_requires_token_returns_401_not_500():
+    c = _client_no_auth()
+    r = c.get("/users")
+    assert r.status_code == 401
+    assert "detail" in (r.json() or {})
 
 
 def test_users_crud():

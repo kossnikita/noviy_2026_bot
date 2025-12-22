@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Iterable, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import (
     Boolean,
@@ -150,7 +151,23 @@ def create_db(database_url: str, db_path: str) -> Db:
     SessionFactory = sessionmaker(
         bind=engine, expire_on_commit=False, future=True
     )
-    logger.info("SQLAlchemy engine created: %s", url)
+
+    def _redact_db_url(raw: str) -> str:
+        try:
+            u = urlsplit(raw)
+        except Exception:
+            return "<invalid-db-url>"
+        if not u.scheme:
+            return raw
+        netloc = u.netloc
+        if "@" in netloc:
+            creds, host = netloc.rsplit("@", 1)
+            if ":" in creds:
+                user = creds.split(":", 1)[0]
+                netloc = f"{user}:***@{host}"
+        return urlunsplit((u.scheme, netloc, u.path, u.query, u.fragment))
+
+    logger.info("SQLAlchemy engine created: %s", _redact_db_url(url))
     return Db(engine=engine, session_factory=SessionFactory)
 
 
