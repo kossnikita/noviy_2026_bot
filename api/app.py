@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import hashlib
 import logging
 import os
 import time
@@ -27,7 +28,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from api.db import Db, init_db
-from api.db_sa import Blacklist, Chat, Setting, SpotifyTrack, User
+from api.db_sa import ApiToken, Blacklist, Chat, Setting, SpotifyTrack, User
 
 from .schemas import (
     BlacklistByUsername,
@@ -135,6 +136,65 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         if changed:
             s.commit()
 
+    def _hash_token(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _extract_http_token(request: Request) -> str | None:
+        auth = (request.headers.get("authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            v = auth[7:].strip()
+            return v if v else None
+        x = (request.headers.get("x-api-token") or "").strip()
+        return x if x else None
+
+    def _extract_ws_token(ws: WebSocket) -> str | None:
+        auth = (ws.headers.get("authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            v = auth[7:].strip()
+            if v:
+                return v
+        x = (ws.headers.get("x-api-token") or "").strip()
+        if x:
+            return x
+        q = (ws.query_params.get("token") or "").strip()
+        return q if q else None
+
+    def _ensure_bootstrap_token(s: Session) -> None:
+        raw = (os.getenv("API_TOKEN") or "").strip()
+        if not raw:
+            return
+        h = _hash_token(raw)
+        exists = s.scalar(select(ApiToken).where(ApiToken.token_hash == h))
+        if exists is None:
+            s.add(ApiToken(token_hash=h, label="env:API_TOKEN"))
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+
+    def _require_token_or_401(request: Request) -> None:
+        token = _extract_http_token(request)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing API token",
+            )
+        token_hash = _hash_token(token)
+        with request.app.state.db.session() as s:
+            row = s.scalar(
+                select(ApiToken).where(ApiToken.token_hash == token_hash)
+            )
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid API token",
+                )
+            try:
+                row.last_used_at = datetime.now(UTC)
+                s.commit()
+            except Exception:
+                s.rollback()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("API starting")
@@ -150,6 +210,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         try:
             with app.state.db.session() as s:
                 _ensure_default_settings(s)
+                _ensure_bootstrap_token(s)
         except Exception:
             logger.exception("Failed to ensure default settings")
         yield
@@ -163,8 +224,14 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         try:
             with db.session() as s:
                 _ensure_default_settings(s)
+                _ensure_bootstrap_token(s)
         except Exception:
             logger.exception("Failed to ensure default settings")
+
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next) -> Response:
+        _require_token_or_401(request)
+        return await call_next(request)
 
     @app.middleware("http")
     async def access_log_middleware(request: Request, call_next) -> Response:
@@ -210,6 +277,24 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.websocket("/ws/player")
     async def ws_player(ws: WebSocket) -> None:
+        token = _extract_ws_token(ws)
+        if not token:
+            await ws.accept()
+            await ws.close(code=4401)
+            return
+        token_hash = _hash_token(token)
+        with app.state.db.session() as s:
+            row = s.scalar(select(ApiToken).where(ApiToken.token_hash == token_hash))
+            if row is None:
+                await ws.accept()
+                await ws.close(code=4401)
+                return
+            try:
+                row.last_used_at = datetime.now(UTC)
+                s.commit()
+            except Exception:
+                s.rollback()
+
         await ws.accept()
         ctrl: _PlayerController = app.state.player
         logger.info(

@@ -24,6 +24,11 @@ class _Api:
         self._session = requests.Session()
         self._log = logging.getLogger("bot.api")
 
+        token = (os.getenv("API_TOKEN") or "").strip()
+        if token:
+            # Prefer standard scheme; API also accepts X-API-Token.
+            self._session.headers.update({"Authorization": f"Bearer {token}"})
+
     def _url(self, path: str) -> str:
         if not path.startswith("/"):
             path = "/" + path

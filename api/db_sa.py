@@ -101,6 +101,24 @@ class SpotifyTrack(Base):
     )
 
 
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    token_hash: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True
+    )
+    label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+
+
 def build_database_url(database_url: str, db_path: str) -> str:
     if database_url:
         return database_url

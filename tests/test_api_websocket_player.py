@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import hashlib
+
 from fastapi.testclient import TestClient
 
 from api.app import create_app
-from api.db_sa import Base, SpotifyTrack, create_db
+from api.db_sa import ApiToken, Base, SpotifyTrack, create_db
 
 
 def _client_with_tracks() -> TestClient:
     db = create_db(database_url="sqlite+pysqlite:///:memory:", db_path=":memory:")
     Base.metadata.create_all(db.engine)
+
+    token = "TEST_TOKEN"
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with db.session() as s:
+        s.add(ApiToken(token_hash=token_hash, label="test"))
+        s.commit()
 
     with db.session() as s:
         s.add_all(
@@ -32,13 +40,16 @@ def _client_with_tracks() -> TestClient:
         s.commit()
 
     app = create_app(db=db)
-    return TestClient(app)
+    c = TestClient(app)
+    # Keep token on client for HTTP too, if needed in future tests.
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
 
 
 def test_ws_player_state_and_controls():
     c = _client_with_tracks()
 
-    with c.websocket_connect("/ws/player") as ws:
+    with c.websocket_connect("/ws/player?token=TEST_TOKEN") as ws:
         initial = ws.receive_json()
         assert initial["type"] == "state"
         assert initial["playlist"]
@@ -71,7 +82,7 @@ def test_ws_player_state_and_controls():
 def test_ws_player_set_index_validation():
     c = _client_with_tracks()
 
-    with c.websocket_connect("/ws/player") as ws:
+    with c.websocket_connect("/ws/player?token=TEST_TOKEN") as ws:
         _ = ws.receive_json()
 
         ws.send_json({"op": "set_index", "index": 999})

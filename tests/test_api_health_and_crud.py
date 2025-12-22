@@ -1,14 +1,25 @@
+import hashlib
+
 from fastapi.testclient import TestClient
 
 from api.app import create_app
-from api.db_sa import Base, create_db
+from api.db_sa import ApiToken, Base, create_db
 
 
 def _client():
     db = create_db(database_url="sqlite+pysqlite:///:memory:", db_path=":memory:")
     Base.metadata.create_all(db.engine)
+
+    token = "TEST_TOKEN"
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with db.session() as s:
+        s.add(ApiToken(token_hash=token_hash, label="test"))
+        s.commit()
+
     app = create_app(db=db)
-    return TestClient(app)
+    c = TestClient(app)
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
 
 
 def test_health():
