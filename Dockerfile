@@ -6,6 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Install nginx for reverse proxy
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nginx \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install pip packages
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip \
@@ -18,6 +23,11 @@ COPY . /app
 RUN adduser --disabled-password --gecos '' appuser \
     && chown -R appuser:appuser /app
 
+RUN chmod +x /app/docker-entrypoint.sh
+
 USER appuser
 
-CMD ["python", "."]
+# nginx listens on 80
+EXPOSE 80
+
+CMD ["/app/docker-entrypoint.sh"]
