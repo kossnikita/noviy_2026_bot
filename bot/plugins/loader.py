@@ -73,7 +73,12 @@ class PluginRegistry:
         self.load_contest_plugins()
         self.load_system_plugins()
 
-    def register_all(self, user_router: Router, admin_router: Router) -> None:
+    def register_all(
+        self,
+        user_router: Router,
+        admin_router: Router,
+        group_router: Router | None = None,
+    ) -> None:
         for p in self.plugins:
             p.register_user(user_router)
             p.register_admin(admin_router)
@@ -81,6 +86,21 @@ class PluginRegistry:
         for p in self.system_plugins:
             p.register_user(user_router)
             p.register_admin(admin_router)
+
+            if group_router is not None:
+                reg_group = getattr(p, "register_group", None)
+                if callable(reg_group):
+                    try:
+                        reg_group(group_router)
+                        self._log.info(
+                            "Registered system plugin into group router: %s",
+                            getattr(p, "name", "unknown"),
+                        )
+                    except Exception:
+                        self._log.exception(
+                            "Failed to register system plugin into group router: %s",
+                            getattr(p, "name", "unknown"),
+                        )
 
     def start_system_background_tasks(self, bot: Bot) -> list[asyncio.Task[None]]:
         tasks: list[asyncio.Task[None]] = []

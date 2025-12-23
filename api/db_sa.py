@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     BigInteger,
+    Float,
     Integer,
     String,
     Text,
@@ -117,6 +118,69 @@ class ApiToken(Base):
     )
     last_used_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True
+    )
+
+
+class Prize(Base):
+    __tablename__ = "prizes"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    friendly_name: Mapped[str] = mapped_column(String, nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class PrizeRemaining(Base):
+    __tablename__ = "prize_remaining"
+
+    prize_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True
+    )
+    remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PrizeWin(Base):
+    __tablename__ = "prize_wins"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    prize_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    won_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+
+
+class Voucher(Base):
+    __tablename__ = "vouchers"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    code: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class Photo(Base):
+    __tablename__ = "photos"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    added_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
     )
 
 

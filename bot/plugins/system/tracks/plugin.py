@@ -68,7 +68,7 @@ def _closed_text(close_ts: int) -> str:
 
 
 def _get_max_tracks_per_user(settings: SettingsRepo, *, fallback: int) -> int:
-    raw = (settings.get(_MAX_TRACKS_PER_USER_KEY, "") or "").strip()
+    raw = (settings.get(_MAX_TRACKS_PER_USER_KEY, "3") or "3").strip()
     try:
         v = int(raw)
         if v >= 0:
@@ -139,7 +139,7 @@ class Plugin:
         self._spotify = SpotifyClient(
             cfg.spotify_client_id, cfg.spotify_client_secret
         )
-        self._max_tracks_per_user = int(cfg.max_tracks_per_user)
+        self._max_tracks_per_user = 0
         self._admin_id = int(cfg.admin_id)
 
         self._scheduler_task: asyncio.Task[None] | None = None

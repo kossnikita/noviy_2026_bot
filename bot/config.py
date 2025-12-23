@@ -11,7 +11,6 @@ class Config:
     database_url: str = ""
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
-    max_tracks_per_user: int = 3
 
 
 def load_config() -> Config:
@@ -22,16 +21,11 @@ def load_config() -> Config:
     database_url = os.getenv("DATABASE_URL", "").strip()
     spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
-    max_tracks_str = os.getenv("MAX_TRACKS_PER_USER", "3").strip()
 
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in environment")
     if not admin_id_str.isdigit():
         raise RuntimeError("ADMIN_ID is not a valid integer in environment")
-
-    max_tracks = 5
-    if max_tracks_str.isdigit():
-        max_tracks = int(max_tracks_str)
 
     return Config(
         bot_token=token,
@@ -40,5 +34,4 @@ def load_config() -> Config:
         database_url=database_url,
         spotify_client_id=spotify_client_id,
         spotify_client_secret=spotify_client_secret,
-        max_tracks_per_user=max_tracks,
     )

@@ -139,3 +139,77 @@ class ExistsOut(BaseModel):
 
 class DeletedOut(BaseModel):
     deleted: int
+
+
+# ---- Prizes ----
+
+
+class PrizeOut(_ORM):
+    id: int
+    name: str
+    friendly_name: str
+    weight: float
+
+
+class PrizeCreate(BaseModel):
+    name: str
+    friendly_name: str
+    weight: float
+
+
+class PrizeRemainingOut(BaseModel):
+    prize_id: int
+    remaining: int
+
+
+class PrizeRemainingUpsert(BaseModel):
+    remaining: int
+
+
+class PrizeWinOut(_ORM):
+    id: int
+    user_id: int
+    prize_id: int
+    won_at: datetime
+
+
+class PrizeDrawIn(BaseModel):
+    voucher: str
+
+
+class PrizeDrawOut(BaseModel):
+    user_id: int
+    prize: PrizeOut
+    won_at: datetime
+
+
+# ---- Vouchers ----
+
+
+class VoucherCreate(BaseModel):
+    user_id: int
+
+
+class VoucherOut(_ORM):
+    id: int
+    code: str
+    user_id: int
+    created_at: datetime
+    used_at: Optional[datetime] = None
+
+
+# ---- Photos ----
+
+
+class PhotoCreate(BaseModel):
+    name: str
+    url: str
+    added_by: int
+
+
+class PhotoOut(_ORM):
+    id: int
+    name: str
+    url: str
+    added_by: int
+    added_at: datetime

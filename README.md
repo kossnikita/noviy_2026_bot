@@ -14,20 +14,7 @@ Database/models are hosted by the FastAPI service (package `api/`). The bot talk
 
 ## Quick Start
 
-1) Create and activate a virtual environment:
-
-    ```bash
-    python -m venv .venv
-    . .venv/Scripts/activate
-    ```
-
-2) Install dependencies:
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3) Create .env from template and fill values:
+1) Create .env from template and fill values:
 
     ```bash
     copy .env.example .env
@@ -44,13 +31,13 @@ Database/models are hosted by the FastAPI service (package `api/`). The bot talk
     - `Authorization: Bearer <API_TOKEN>` (recommended)
     - or `X-API-Token: <API_TOKEN>`
 
-4) Run bot + API together:
+2) Run bot + API together:
 
     ```bash
-    python -m main
+    docker run -d --name noviy --env-file .env -v ./data:/app/data -p 8080:80 noviy_2026_bot:latest    
     ```
 
-5) Add the bot to your group chat if desired. The bot records known group chats when added.
+3) Add the bot to your group chat if desired. The bot records known group chats when added.
 
 ## Admin Commands
 

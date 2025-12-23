@@ -50,7 +50,9 @@ class _Api:
     def get_json(self, path: str):
         resp = self._request("GET", path)
         if resp.status_code >= 400:
-            raise ApiError(f"API GET {path} failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API GET {path} failed: {resp.status_code} {resp.text}"
+            )
         return resp.json()
 
     def post_json(self, path: str, payload: object):
@@ -66,7 +68,7 @@ class _Api:
         return resp
 
 
-def _api_base_url_from_env(*, fallback_port: int = 8000) -> str:
+def _api_base_url_from_env(*, fallback_port: int = 8080) -> str:
     base = (os.getenv("API_BASE_URL") or "").strip()
     if base:
         return base
@@ -82,7 +84,9 @@ class UserRepo:
         if resp.status_code == 404:
             return False
         if resp.status_code >= 400:
-            raise ApiError(f"API users/{user_id} failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API users/{user_id} failed: {resp.status_code} {resp.text}"
+            )
         return True
 
     def upsert_user(
@@ -109,7 +113,9 @@ class UserRepo:
             if resp.status_code == 201:
                 return
             if resp.status_code != 409:
-                raise ApiError(f"API create user failed: {resp.status_code} {resp.text}")
+                raise ApiError(
+                    f"API create user failed: {resp.status_code} {resp.text}"
+                )
 
         resp = self._api.put_json(
             f"/users/{user_id}",
@@ -122,7 +128,9 @@ class UserRepo:
             },
         )
         if resp.status_code >= 400:
-            raise ApiError(f"API update user failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API update user failed: {resp.status_code} {resp.text}"
+            )
 
     def touch_activity(self, user_id: int) -> None:
         # API updates last_active on any PUT.
@@ -153,7 +161,9 @@ class ChatRepo:
     def __init__(self, api: _Api):
         self._api = api
 
-    def upsert_chat(self, chat_id: int, chat_type: str, title: Optional[str]) -> None:
+    def upsert_chat(
+        self, chat_id: int, chat_type: str, title: Optional[str]
+    ) -> None:
         resp = self._api._request("GET", f"/chats/{chat_id}")
         if resp.status_code == 404:
             r2 = self._api.post_json(
@@ -163,27 +173,37 @@ class ChatRepo:
             if r2.status_code in {200, 201}:
                 return
             if r2.status_code != 409:
-                raise ApiError(f"API create chat failed: {r2.status_code} {r2.text}")
+                raise ApiError(
+                    f"API create chat failed: {r2.status_code} {r2.text}"
+                )
         elif resp.status_code >= 400:
-            raise ApiError(f"API get chat failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API get chat failed: {resp.status_code} {resp.text}"
+            )
 
         r3 = self._api.put_json(
             f"/chats/{chat_id}",
             {"type": chat_type, "title": title},
         )
         if r3.status_code >= 400:
-            raise ApiError(f"API update chat failed: {r3.status_code} {r3.text}")
+            raise ApiError(
+                f"API update chat failed: {r3.status_code} {r3.text}"
+            )
 
     def count(self) -> int:
         resp = self._api._request("GET", "/chats/group-count")
         if resp.status_code >= 400:
-            raise ApiError(f"API group-count failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API group-count failed: {resp.status_code} {resp.text}"
+            )
         return int((resp.json() or {}).get("count") or 0)
 
     def group_chat_ids(self) -> Iterable[int]:
         resp = self._api._request("GET", "/chats/group-ids")
         if resp.status_code >= 400:
-            raise ApiError(f"API group-ids failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API group-ids failed: {resp.status_code} {resp.text}"
+            )
         for cid in resp.json() or []:
             yield int(cid)
 
@@ -200,9 +220,13 @@ class BlacklistRepo:
             key = tag.lstrip("@").lower()
             r2 = self._api.put_json(f"/blacklist/{key}", {"note": note})
             if r2.status_code >= 400:
-                raise ApiError(f"API blacklist update failed: {r2.status_code} {r2.text}")
+                raise ApiError(
+                    f"API blacklist update failed: {r2.status_code} {r2.text}"
+                )
             return
-        raise ApiError(f"API blacklist create failed: {r.status_code} {r.text}")
+        raise ApiError(
+            f"API blacklist create failed: {r.status_code} {r.text}"
+        )
 
     def remove(self, tag: str) -> None:
         key = tag.lstrip("@").lower()
@@ -210,7 +234,9 @@ class BlacklistRepo:
         if r.status_code in {204, 404}:
             return
         if r.status_code >= 400:
-            raise ApiError(f"API blacklist delete failed: {r.status_code} {r.text}")
+            raise ApiError(
+                f"API blacklist delete failed: {r.status_code} {r.text}"
+            )
 
     def list(self) -> Iterable[tuple]:
         items = self._api.get_json("/blacklist?limit=1000&offset=0")
@@ -225,7 +251,9 @@ class BlacklistRepo:
         if r.status_code == 404:
             return False
         if r.status_code >= 400:
-            raise ApiError(f"API blacklist get failed: {r.status_code} {r.text}")
+            raise ApiError(
+                f"API blacklist get failed: {r.status_code} {r.text}"
+            )
         return True
 
 
@@ -249,14 +277,34 @@ class SettingsRepo:
             raise ApiError(f"API setting set failed: {r.status_code} {r.text}")
 
 
+class PhotosRepo:
+    def __init__(self, api: _Api):
+        self._api = api
+
+    def create(self, *, name: str, url: str, added_by: int) -> dict:
+        r = self._api.post_json(
+            "/photos",
+            {"name": str(name), "url": str(url), "added_by": int(added_by)},
+        )
+        if r.status_code >= 400:
+            raise ApiError(
+                f"API create photo failed: {r.status_code} {r.text}"
+            )
+        return r.json() if r.content else {}
+
+
 class SpotifyTracksRepo:
     def __init__(self, api: _Api):
         self._api = api
 
     def count_by_user(self, user_id: int) -> int:
-        r = self._api._request("GET", f"/spotify-tracks/count-by-user/{user_id}")
+        r = self._api._request(
+            "GET", f"/spotify-tracks/count-by-user/{user_id}"
+        )
         if r.status_code >= 400:
-            raise ApiError(f"API count-by-user failed: {r.status_code} {r.text}")
+            raise ApiError(
+                f"API count-by-user failed: {r.status_code} {r.text}"
+            )
         return int((r.json() or {}).get("count") or 0)
 
     def exists_spotify_id(self, spotify_id: str) -> bool:
@@ -291,7 +339,9 @@ class SpotifyTracksRepo:
         raise ApiError(f"API create track failed: {r.status_code} {r.text}")
 
     def list_by_user(self, user_id: int, limit: int = 20):
-        items = self._api.get_json(f"/spotify-tracks/by-user/{user_id}?limit={int(limit)}")
+        items = self._api.get_json(
+            f"/spotify-tracks/by-user/{user_id}?limit={int(limit)}"
+        )
         out = []
         for it in items or []:
             out.append(
@@ -310,7 +360,9 @@ class SpotifyTracksRepo:
             "DELETE", f"/spotify-tracks/by-user/{user_id}/{spotify_id}"
         )
         if r.status_code >= 400:
-            raise ApiError(f"API delete track failed: {r.status_code} {r.text}")
+            raise ApiError(
+                f"API delete track failed: {r.status_code} {r.text}"
+            )
         return int((r.json() or {}).get("deleted") or 0)
 
 

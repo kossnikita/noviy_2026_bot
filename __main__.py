@@ -3,8 +3,6 @@
 Usage:
   python -m main
 
-Environment:
-  API_ENABLED=1 to also run the API server in-process (default in .env.example).
 """
 
 from __future__ import annotations

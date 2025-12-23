@@ -31,6 +31,10 @@ from starlette.responses import Response
 from api.db import Db, init_db
 from api.db_sa import ApiToken, Blacklist, Chat, Setting, SpotifyTrack, User
 
+from api.prizes import router as prizes_router
+from api.photos import router as photos_router
+from api.vouchers import router as vouchers_router
+
 from .schemas import (
     BlacklistByUsername,
     BlacklistByUsernameOut,
@@ -110,19 +114,11 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     _ensure_logging_configured()
     logger = logging.getLogger("api")
 
-    max_tracks_raw = (os.getenv("MAX_TRACKS_PER_USER") or "5").strip()
-    try:
-        max_tracks_per_user = int(max_tracks_raw)
-        if max_tracks_per_user <= 0:
-            max_tracks_per_user = 5
-    except Exception:
-        max_tracks_per_user = 5
-
     _DEFAULT_SETTINGS: dict[str, str] = {
         # Common bot behavior toggles
         "allow_new_users": "1",
         # Tracks feature
-        "max_tracks_per_user": str(max_tracks_per_user),
+        "max_tracks_per_user": "3",
         # Tracks closure feature (empty means "not scheduled")
         "tracks_close_at_ts": "",
         "tracks_close_announced_for_ts": "0",
@@ -236,6 +232,10 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     app = FastAPI(title="noviy_2026_bot API", lifespan=lifespan)
     app.state.player = _PlayerController()
+
+    app.include_router(prizes_router)
+    app.include_router(photos_router)
+    app.include_router(vouchers_router)
 
     if db is not None:
         app.state.db = db

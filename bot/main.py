@@ -93,8 +93,8 @@ async def main() -> None:
     cfg = load_config()
     logger.info("Config loaded. DB path=%s", cfg.db_path)
 
-    api_host = (os.getenv("API_HOST") or "0.0.0.0").strip()
-    api_port = int((os.getenv("API_PORT") or "8000").strip())
+    api_host = "0.0.0.0"
+    api_port = 8080
     api_base_url = _api_base_url_from_env(fallback_port=api_port)
 
     logger.info("Starting FastAPI server on %s:%s", api_host, api_port)
@@ -139,8 +139,8 @@ async def main() -> None:
     group_router = setup_group_router(chats, users)
     unknown_router = setup_unknown_commands_router()
 
-    # Let plugins register their handlers into the same routers
-    registry.register_all(common_router, admin_router)
+    # Let plugins register their handlers. System plugins may also hook group router.
+    registry.register_all(common_router, admin_router, group_router)
 
     # Configure visible command menus (MenuButton / Commands)
     try:

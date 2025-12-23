@@ -6,7 +6,7 @@
 - Swagger UI: `GET /docs`
 - ReDoc: `GET /redoc`
 
-По умолчанию сервер запускается из [api/main.py](api/main.py) на `http://localhost:8000`.
+По умолчанию сервер запускается из [api/main.py](api/main.py) на `http://localhost:8080`.
 
 ## Общие правила
 
@@ -327,7 +327,7 @@ Upsert (создаёт или обновляет).
 
 ### `WS /ws/player`
 
-Подключение: `ws://<host>:8000/ws/player`
+Подключение: `ws://<host>:8080/ws/player`
 
 Сервер **сразу** после подключения отправляет текущее состояние:
 
