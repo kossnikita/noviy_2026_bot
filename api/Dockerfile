@@ -15,7 +15,8 @@ COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
-COPY . /app
+COPY . /app/api
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 # nginx config lives in this folder
 RUN cp /app/api/nginx.conf /etc/nginx/nginx.conf
