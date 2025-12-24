@@ -93,12 +93,18 @@ async def main() -> None:
     cfg = load_config()
     logger.info("Config loaded. DB path=%s", cfg.db_path)
 
-    api_host = "0.0.0.0"
     api_port = 8080
     api_base_url = _api_base_url_from_env(fallback_port=api_port)
+    api_base_url_env = (os.getenv("API_BASE_URL") or "").strip()
 
-    logger.info("Starting FastAPI server on %s:%s", api_host, api_port)
-    api_server = _start_api_server_thread(host=api_host, port=api_port)
+    api_server = None
+    if api_base_url_env:
+        logger.info("Using external API at %s", api_base_url)
+    else:
+        api_host = "0.0.0.0"
+        logger.info("Starting embedded FastAPI server on %s:%s", api_host, api_port)
+        api_server = _start_api_server_thread(host=api_host, port=api_port)
+
     await _wait_api_ready(base_url=api_base_url)
 
     api = _Api(ApiSettings(base_url=api_base_url, timeout_s=5.0))

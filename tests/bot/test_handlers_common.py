@@ -6,7 +6,9 @@ from aiogram.methods import SendMessage
 from aiogram.types import Update
 
 from api.db_sa import BlacklistRepo, SettingsRepo, UserRepo
-from bot.middlewares.registration_required import RegistrationRequiredMiddleware
+from bot.middlewares.registration_required import (
+    RegistrationRequiredMiddleware,
+)
 from bot.routers.common import setup_common_router
 
 
@@ -39,7 +41,9 @@ def _update_with_message(
 
 
 @pytest.mark.asyncio
-async def test_start_registers_new_user_when_allowed(db, bot_and_session, admin_id):
+async def test_start_registers_new_user_when_allowed(
+    db, bot_and_session, admin_id
+):
     bot, session = bot_and_session
 
     users = UserRepo(db)
@@ -73,7 +77,9 @@ async def test_start_registers_new_user_when_allowed(db, bot_and_session, admin_
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_new_user_when_disabled(db, bot_and_session, admin_id):
+async def test_start_rejects_new_user_when_disabled(
+    db, bot_and_session, admin_id
+):
     bot, session = bot_and_session
 
     users = UserRepo(db)

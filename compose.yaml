@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: noviy_2026
+      POSTGRES_USER: noviy
+      POSTGRES_PASSWORD: noviy_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    environment:
+      # Use Postgres instead of SQLite
+      DATABASE_URL: postgresql+psycopg://noviy:noviy_password@postgres:5432/noviy_2026
+    ports:
+      - "8080:80"
+
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      # Bot talks directly to uvicorn inside api container
+      API_BASE_URL: http://api:8080
+
+volumes:
+  pgdata:

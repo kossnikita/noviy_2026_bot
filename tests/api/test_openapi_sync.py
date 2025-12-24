@@ -17,7 +17,7 @@ def test_openapi_json_matches_app_schema(db):
     app = create_app(db=db)
     generated = app.openapi()
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     openapi_path = repo_root / "openapi.json"
     saved = json.loads(openapi_path.read_text(encoding="utf-8"))
 

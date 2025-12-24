@@ -82,7 +82,11 @@ async def test_command_clears_tracks_wait_state_and_allows_command_handler(
     user_id = 200
 
     await _set_state(
-        dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id, state=initial_state
+        dp=dp,
+        bot_id=bot.id,
+        chat_id=chat_id,
+        user_id=user_id,
+        state=initial_state,
     )
 
     upd = _update_with_message(
@@ -96,7 +100,9 @@ async def test_command_clears_tracks_wait_state_and_allows_command_handler(
     await dp.feed_update(bot, upd)
 
     assert (
-        await _get_state(dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id)
+        await _get_state(
+            dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id
+        )
     ) is None
 
     assert any(
@@ -145,7 +151,9 @@ async def test_non_command_does_not_clear_tracks_wait_state(bot_and_session):
     await dp.feed_update(bot, upd)
 
     assert (
-        await _get_state(dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id)
+        await _get_state(
+            dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id
+        )
     ) == _TrackStates.waiting_query.state
 
 
@@ -186,5 +194,7 @@ async def test_command_does_not_clear_unrelated_state(bot_and_session):
     await dp.feed_update(bot, upd)
 
     assert (
-        await _get_state(dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id)
+        await _get_state(
+            dp=dp, bot_id=bot.id, chat_id=chat_id, user_id=user_id
+        )
     ) == "some:other_state"
