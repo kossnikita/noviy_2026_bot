@@ -7,8 +7,6 @@ from dotenv import load_dotenv
 class Config:
     bot_token: str
     admin_id: int
-    db_path: str = "database.sqlite3"
-    database_url: str = ""
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
 
@@ -17,8 +15,6 @@ def load_config() -> Config:
     load_dotenv()
     token = os.getenv("BOT_TOKEN", "").strip()
     admin_id_str = os.getenv("ADMIN_ID", "").strip()
-    db_path = os.getenv("DB_PATH", "database.sqlite3").strip()
-    database_url = os.getenv("DATABASE_URL", "").strip()
     spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
 
@@ -30,8 +26,6 @@ def load_config() -> Config:
     return Config(
         bot_token=token,
         admin_id=int(admin_id_str),
-        db_path=db_path,
-        database_url=database_url,
         spotify_client_id=spotify_client_id,
         spotify_client_secret=spotify_client_secret,
     )
