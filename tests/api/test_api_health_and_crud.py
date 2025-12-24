@@ -36,6 +36,13 @@ def test_health():
     assert r.json()["ok"] is True
 
 
+def test_health_without_token():
+    c = _client_no_auth()
+    r = c.get("/health")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
 def test_requires_token_returns_401_not_500():
     c = _client_no_auth()
     r = c.get("/users")

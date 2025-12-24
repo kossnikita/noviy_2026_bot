@@ -31,10 +31,6 @@ from starlette.responses import Response
 from api.db import Db, init_db
 from api.db_sa import ApiToken, Blacklist, Chat, Setting, SpotifyTrack, User
 
-from api.prizes import router as prizes_router
-from api.photos import router as photos_router
-from api.vouchers import router as vouchers_router
-
 from .schemas import (
     BlacklistByUsername,
     BlacklistByUsernameOut,
@@ -114,11 +110,19 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     _ensure_logging_configured()
     logger = logging.getLogger("api")
 
+    max_tracks_raw = (os.getenv("MAX_TRACKS_PER_USER") or "5").strip()
+    try:
+        max_tracks_per_user = int(max_tracks_raw)
+        if max_tracks_per_user <= 0:
+            max_tracks_per_user = 5
+    except Exception:
+        max_tracks_per_user = 5
+
     _DEFAULT_SETTINGS: dict[str, str] = {
         # Common bot behavior toggles
         "allow_new_users": "1",
         # Tracks feature
-        "max_tracks_per_user": "3",
+        "max_tracks_per_user": str(max_tracks_per_user),
         # Tracks closure feature (empty means "not scheduled")
         "tracks_close_at_ts": "",
         "tracks_close_announced_for_ts": "0",
@@ -136,25 +140,6 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     def _hash_token(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    def _describe_db_source(*, database_url: str, db_path: str) -> str:
-        # Keep it short and avoid secrets.
-        if database_url:
-            # Mask password, if present.
-            try:
-                from urllib.parse import urlsplit, urlunsplit
-
-                u = urlsplit(database_url)
-                netloc = u.netloc
-                if "@" in netloc:
-                    creds, host = netloc.rsplit("@", 1)
-                    if ":" in creds:
-                        user = creds.split(":", 1)[0]
-                        netloc = f"{user}:***@{host}"
-                return urlunsplit((u.scheme, netloc, u.path, u.query, u.fragment))
-            except Exception:
-                return "<database_url>"
-        return f"sqlite:///{db_path}"
-
     def _extract_http_token(request: Request) -> str | None:
         auth = (request.headers.get("authorization") or "").strip()
         if auth.lower().startswith("bearer "):
@@ -163,48 +148,20 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         x = (request.headers.get("x-api-token") or "").strip()
         return x if x else None
 
-    def _extract_ws_token(ws: WebSocket) -> str | None:
-        auth = (ws.headers.get("authorization") or "").strip()
-        if auth.lower().startswith("bearer "):
-            v = auth[7:].strip()
-            if v:
-                return v
-        x = (ws.headers.get("x-api-token") or "").strip()
-        if x:
-            return x
-        q = (ws.query_params.get("token") or "").strip()
-        return q if q else None
-
-    def _ensure_bootstrap_token(s: Session) -> None:
-        raw = (os.getenv("API_TOKEN") or "").strip()
-        if not raw:
-            return
-        h = _hash_token(raw)
-        exists = s.scalar(select(ApiToken).where(ApiToken.token_hash == h))
-        if exists is None:
-            s.add(ApiToken(token_hash=h, label="env:API_TOKEN"))
-            try:
-                s.commit()
-            except IntegrityError:
-                s.rollback()
-
-    def _check_token(request: Request) -> tuple[bool, str | None, str | None]:
+    def _check_http_token(request: Request) -> tuple[bool, str | None]:
         token = _extract_http_token(request)
         if not token:
-            return (False, "Missing API token", None)
+            return (False, "Missing API token")
         token_hash = _hash_token(token)
-        with request.app.state.db.session() as s:
-            row = s.scalar(
-                select(ApiToken).where(ApiToken.token_hash == token_hash)
-            )
-            if row is None:
-                return (False, "Invalid API token", None)
-            try:
-                row.last_used_at = datetime.now(UTC)
-                s.commit()
-            except Exception:
-                s.rollback()
-        return (True, None, token_hash)
+        try:
+            with request.app.state.db.session() as s:
+                row = s.scalar(select(ApiToken).where(ApiToken.token_hash == token_hash))
+                if row is None:
+                    return (False, "Invalid API token")
+        except Exception:
+            # Never turn auth failures into 500.
+            return (False, "Unauthorized")
+        return (True, None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -213,10 +170,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             database_url = (os.getenv("DATABASE_URL") or "").strip()
             db_path = (os.getenv("DB_PATH") or "database.sqlite3").strip()
             app.state.db = init_db(database_url=database_url, db_path=db_path)
-            logger.info(
-                "DB initialized for API (%s)",
-                _describe_db_source(database_url=database_url, db_path=db_path),
-            )
+            logger.info("DB initialized for API (db_path=%s)", db_path)
         else:
             app.state.db = db
             logger.info("DB injected for API")
@@ -224,7 +178,6 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         try:
             with app.state.db.session() as s:
                 _ensure_default_settings(s)
-                _ensure_bootstrap_token(s)
         except Exception:
             logger.exception("Failed to ensure default settings")
         yield
@@ -233,22 +186,22 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     app = FastAPI(title="noviy_2026_bot API", lifespan=lifespan)
     app.state.player = _PlayerController()
 
-    app.include_router(prizes_router)
-    app.include_router(photos_router)
-    app.include_router(vouchers_router)
-
     if db is not None:
         app.state.db = db
         try:
             with db.session() as s:
                 _ensure_default_settings(s)
-                _ensure_bootstrap_token(s)
         except Exception:
             logger.exception("Failed to ensure default settings")
 
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next) -> Response:
-        ok, err, _token_hash = _check_token(request)
+        # Healthcheck should work without a token.
+        # Keep both variants for safety (direct uvicorn hits vs nginx-stripped paths).
+        if request.url.path in {"/health", "/api/health"}:
+            return await call_next(request)
+
+        ok, err = _check_http_token(request)
         if not ok:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -300,24 +253,6 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     @app.websocket("/ws/player")
     async def ws_player(ws: WebSocket) -> None:
-        token = _extract_ws_token(ws)
-        if not token:
-            await ws.accept()
-            await ws.close(code=4401)
-            return
-        token_hash = _hash_token(token)
-        with app.state.db.session() as s:
-            row = s.scalar(select(ApiToken).where(ApiToken.token_hash == token_hash))
-            if row is None:
-                await ws.accept()
-                await ws.close(code=4401)
-                return
-            try:
-                row.last_used_at = datetime.now(UTC)
-                s.commit()
-            except Exception:
-                s.rollback()
-
         await ws.accept()
         ctrl: _PlayerController = app.state.player
         logger.info(
