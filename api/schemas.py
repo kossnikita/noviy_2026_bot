@@ -145,42 +145,34 @@ class DeletedOut(BaseModel):
 
 
 class PrizeOut(_ORM):
-    id: int
     name: str
-    friendly_name: str
-    weight: float
+    title: str
 
 
 class PrizeCreate(BaseModel):
     name: str
-    friendly_name: str
-    weight: float
+    title: str
 
 
-class PrizeRemainingOut(BaseModel):
-    prize_id: int
-    remaining: int
+class PrizeUpdate(BaseModel):
+    title: str
 
 
-class PrizeRemainingUpsert(BaseModel):
-    remaining: int
-
-
-class PrizeWinOut(_ORM):
+class PrizeWinOut(BaseModel):
     id: int
-    user_id: int
-    prize_id: int
-    won_at: datetime
-
-
-class PrizeDrawIn(BaseModel):
-    voucher: str
-
-
-class PrizeDrawOut(BaseModel):
     user_id: int
     prize: PrizeOut
     won_at: datetime
+
+
+class PrizeWinCreate(BaseModel):
+    user_id: int
+    prize_name: str
+    won_at: Optional[datetime] = None
+
+
+class PrizeWinsCreate(BaseModel):
+    wins: list[PrizeWinCreate]
 
 
 # ---- Vouchers ----
@@ -190,10 +182,14 @@ class VoucherCreate(BaseModel):
     user_id: int
 
 
+class VoucherUse(BaseModel):
+    code: str
+
+
 class VoucherOut(_ORM):
     id: int
     code: str
-    user_id: int
+    user_id: Optional[int] = None
     created_at: datetime
     used_at: Optional[datetime] = None
 

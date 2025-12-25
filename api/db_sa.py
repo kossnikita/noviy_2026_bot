@@ -8,7 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     BigInteger,
-    Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -122,23 +122,13 @@ class ApiToken(Base):
 
 
 class Prize(Base):
-    __tablename__ = "prizes"
+    __tablename__ = "slot"
 
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
     )
-    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    friendly_name: Mapped[str] = mapped_column(String, nullable=False)
-    weight: Mapped[float] = mapped_column(Float, nullable=False)
-
-
-class PrizeRemaining(Base):
-    __tablename__ = "prize_remaining"
-
-    prize_id: Mapped[int] = mapped_column(
-        Integer, primary_key=True
-    )
-    remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
 class PrizeWin(Base):
@@ -148,7 +138,11 @@ class PrizeWin(Base):
         Integer, primary_key=True, autoincrement=True
     )
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    prize_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    prize_name: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("slot.name", ondelete="RESTRICT"),
+        nullable=False,
+    )
     won_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
@@ -163,11 +157,16 @@ class Voucher(Base):
     code: Mapped[str] = mapped_column(
         String, nullable=False, unique=True
     )
-    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # When user_id is NULL, the code is available for reuse.
+    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
+    issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    use_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
 
 
 class Photo(Base):

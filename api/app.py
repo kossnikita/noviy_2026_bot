@@ -31,6 +31,10 @@ from starlette.responses import Response
 from api.db import Db, init_db
 from api.db_sa import ApiToken, Blacklist, Chat, Setting, SpotifyTrack, User
 
+from api.photos import router as photos_router
+from api.slot import router as prizes_router
+from api.vouchers import router as vouchers_router
+
 from .schemas import (
     BlacklistByUsername,
     BlacklistByUsernameOut,
@@ -185,6 +189,10 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     app = FastAPI(title="noviy_2026_bot API", lifespan=lifespan)
     app.state.player = _PlayerController()
+
+    app.include_router(prizes_router)
+    app.include_router(vouchers_router)
+    app.include_router(photos_router)
 
     if db is not None:
         app.state.db = db
