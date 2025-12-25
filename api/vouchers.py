@@ -15,7 +15,7 @@ router = APIRouter(prefix="/vouchers", tags=["vouchers"])
 
 def _generate_code() -> str:
     # Keep it a short "number"-like string.
-    return f"{random.randint(0, 9999):06d}"
+    return f"{random.randint(0, 9999):04d}"
 
 
 def _issue_voucher_for_user(
