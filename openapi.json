@@ -2970,18 +2970,6 @@
             "format": "date-time",
             "title": "Created At"
           },
-          "issued_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Issued At"
-          },
           "used_at": {
             "anyOf": [
               {

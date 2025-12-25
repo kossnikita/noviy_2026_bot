@@ -161,9 +161,6 @@ class Voucher(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
-    issued_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
-    )
     used_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True
     )

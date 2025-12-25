@@ -193,7 +193,6 @@ class VoucherOut(_ORM):
     user_id: Optional[int] = None
     issued_by: Optional[int] = None
     created_at: datetime
-    issued_at: Optional[datetime] = None
     used_at: Optional[datetime] = None
     use_count: int = 0
 

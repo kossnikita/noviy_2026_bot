@@ -21,7 +21,6 @@ def _generate_code() -> str:
 def _issue_voucher_for_user(
     request: Request, user_id: int, issued_by: int | None = None
 ) -> Voucher:
-    now = datetime.now(UTC)
     with request.app.state.db.session() as s:
         # If the user already has an active voucher, return it.
         existing = s.scalar(
@@ -46,7 +45,6 @@ def _issue_voucher_for_user(
         )
         if available is not None:
             available.user_id = int(user_id)
-            available.issued_at = now
             if issued_by is not None:
                 available.issued_by = int(issued_by)
             s.commit()
@@ -54,12 +52,11 @@ def _issue_voucher_for_user(
             return available
 
         # Otherwise, create a new code.
-        for _ in range(10000):
+        for _ in range(9999):
             code = _generate_code()
             v = Voucher(
                 code=code,
                 user_id=int(user_id),
-                issued_at=now,
                 issued_by=(int(issued_by) if issued_by is not None else None),
             )
             s.add(v)
