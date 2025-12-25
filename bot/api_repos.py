@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -16,6 +15,7 @@ class ApiError(RuntimeError):
 class ApiSettings:
     base_url: str
     timeout_s: float = 5.0
+    token: Optional[str] = None
 
 
 class _Api:
@@ -24,10 +24,10 @@ class _Api:
         self._session = requests.Session()
         self._log = logging.getLogger("bot.api")
 
-        token = (os.getenv("API_TOKEN") or "").strip()
-        if token:
-            # Prefer standard scheme; API also accepts X-API-Token.
-            self._session.headers.update({"Authorization": f"Bearer {token}"})
+        if settings.token:
+            self._session.headers.update(
+                {"Authorization": f"Bearer {settings.token.strip()}"}
+            )
 
     def _url(self, path: str) -> str:
         if not path.startswith("/"):
@@ -66,13 +66,6 @@ class _Api:
     def delete(self, path: str):
         resp = self._request("DELETE", path)
         return resp
-
-
-def _api_base_url_from_env(*, fallback_port: int = 8080) -> str:
-    base = (os.getenv("API_BASE_URL") or "").strip()
-    if base:
-        return base
-    return f"http://127.0.0.1:{fallback_port}"
 
 
 class UserRepo:
@@ -364,15 +357,3 @@ class SpotifyTracksRepo:
                 f"API delete track failed: {r.status_code} {r.text}"
             )
         return int((r.json() or {}).get("deleted") or 0)
-
-
-def build_repos(*, base_url: str | None = None, timeout_s: float = 5.0):
-    url = base_url or _api_base_url_from_env()
-    api = _Api(ApiSettings(base_url=url, timeout_s=timeout_s))
-    return (
-        UserRepo(api),
-        ChatRepo(api),
-        BlacklistRepo(api),
-        SettingsRepo(api),
-        SpotifyTracksRepo(api),
-    )

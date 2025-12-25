@@ -9,6 +9,8 @@ class Config:
     admin_id: int
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
+    api_base_url: str = ""
+    api_token: str = ""
 
 
 def load_config() -> Config:
@@ -17,6 +19,11 @@ def load_config() -> Config:
     admin_id_str = os.getenv("ADMIN_ID", "").strip()
     spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
+
+    api_base_url = (os.getenv("API_BASE_URL") or "").strip()
+    if not api_base_url:
+        api_base_url = "http://127.0.0.1:8080"
+    api_token = (os.getenv("API_TOKEN") or "").strip()
 
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in environment")
@@ -28,4 +35,6 @@ def load_config() -> Config:
         admin_id=int(admin_id_str),
         spotify_client_id=spotify_client_id,
         spotify_client_secret=spotify_client_secret,
+        api_base_url=api_base_url,
+        api_token=api_token,
     )

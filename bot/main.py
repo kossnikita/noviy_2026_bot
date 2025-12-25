@@ -1,8 +1,5 @@
 import asyncio
 import logging
-import os
-import threading
-from dataclasses import dataclass
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -22,7 +19,6 @@ from bot.api_repos import (
     SettingsRepo,
     UserRepo,
     _Api,
-    _api_base_url_from_env,
 )
 from bot.plugins.loader import registry
 from bot.routers.common import setup_common_router
@@ -38,41 +34,6 @@ from bot.middlewares.registration_required import (
 )
 from bot.routers.unknown_commands import setup_unknown_commands_router
 from bot.schedulers.vouchers_sync import run_voucher_sync
-
-
-async def _run_api_server(*, host: str, port: int) -> None:
-    raise RuntimeError(
-        "Deprecated: API server now runs in a background thread"
-    )
-
-
-@dataclass
-class _ApiServerHandle:
-    server: object
-    thread: threading.Thread
-
-
-def _start_api_server_thread(*, host: str, port: int) -> _ApiServerHandle:
-    import uvicorn
-
-    from api.app import create_app
-
-    app = create_app()
-    config = uvicorn.Config(
-        app,
-        host=host,
-        port=port,
-        log_level="info",
-        access_log=False,
-        log_config=None,
-    )
-    server = uvicorn.Server(config)
-
-    thread = threading.Thread(
-        target=server.run, name="api-uvicorn", daemon=True
-    )
-    thread.start()
-    return _ApiServerHandle(server=server, thread=thread)
 
 
 async def _wait_api_ready(*, base_url: str, timeout_s: float = 10.0) -> None:
@@ -101,15 +62,16 @@ async def main() -> None:
 
     cfg = load_config()
 
-    api_port = 8080
-    api_base_url = _api_base_url_from_env(fallback_port=api_port)
+    api_base_url = cfg.api_base_url
 
     api_server = None
     logger.info("Using external API at %s", api_base_url)
 
     await _wait_api_ready(base_url=api_base_url)
 
-    api = _Api(ApiSettings(base_url=api_base_url, timeout_s=5.0))
+    api = _Api(
+        ApiSettings(base_url=api_base_url, timeout_s=5.0, token=cfg.api_token)
+    )
     users = UserRepo(api)
     chats = ChatRepo(api)
 

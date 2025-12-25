@@ -5,7 +5,8 @@ from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.types import Message
 
-from bot.api_repos import ApiSettings, PhotosRepo, _Api, _api_base_url_from_env
+from bot.api_repos import ApiSettings, PhotosRepo, _Api
+from bot.config import load_config
 
 
 _LOG = logging.getLogger("photos")
@@ -108,7 +109,14 @@ class Plugin:
 
         # Record in API DB
         try:
-            api = _Api(ApiSettings(base_url=_api_base_url_from_env(), timeout_s=5.0))
+            cfg = load_config()
+            api = _Api(
+                ApiSettings(
+                    base_url=cfg.api_base_url,
+                    timeout_s=5.0,
+                    token=cfg.api_token,
+                )
+            )
             photos = PhotosRepo(api)
             photos.create(
                 name=filename,

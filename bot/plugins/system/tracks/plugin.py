@@ -21,7 +21,6 @@ from bot.api_repos import (
     SettingsRepo,
     SpotifyTracksRepo,
     _Api,
-    _api_base_url_from_env,
 )
 from bot.config import load_config
 from bot.integrations.spotify_client import SpotifyClient
@@ -130,8 +129,13 @@ class Plugin:
     def __init__(self) -> None:
         cfg = load_config()
 
-        api_base_url = _api_base_url_from_env()
-        api = _Api(ApiSettings(base_url=api_base_url, timeout_s=5.0))
+        api = _Api(
+            ApiSettings(
+                base_url=cfg.api_base_url,
+                timeout_s=5.0,
+                token=cfg.api_token,
+            )
+        )
 
         self._settings = SettingsRepo(api)
         self._tracks = SpotifyTracksRepo(api)
@@ -144,7 +148,9 @@ class Plugin:
 
         self._scheduler_task: asyncio.Task[None] | None = None
 
-        self._state_timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
+        self._state_timeout_tasks: dict[
+            tuple[int, int], asyncio.Task[None]
+        ] = {}
 
     def _cancel_state_timeout(self, key: tuple[int, int]) -> None:
         t = self._state_timeout_tasks.pop(key, None)
@@ -384,13 +390,17 @@ class Plugin:
         )
         async def got_query(message: Message, state: FSMContext) -> None:
             if message.from_user is not None:
-                self._cancel_state_timeout((message.chat.id, message.from_user.id))
+                self._cancel_state_timeout(
+                    (message.chat.id, message.from_user.id)
+                )
             await _handle_query(message, state, message.text or "")
 
         @router.callback_query(F.data == "track:cancel")
         async def cancel(cb: CallbackQuery, state: FSMContext) -> None:
             if cb.message and cb.from_user:
-                self._cancel_state_timeout((cb.message.chat.id, cb.from_user.id))
+                self._cancel_state_timeout(
+                    (cb.message.chat.id, cb.from_user.id)
+                )
             await state.clear()
             await cb.answer("Отменено")
             if cb.message:
@@ -405,7 +415,9 @@ class Plugin:
                 return
 
             if cb.message:
-                self._cancel_state_timeout((cb.message.chat.id, cb.from_user.id))
+                self._cancel_state_timeout(
+                    (cb.message.chat.id, cb.from_user.id)
+                )
 
             closed, close_ts = _is_closed(self._settings)
             if closed and close_ts is not None:
