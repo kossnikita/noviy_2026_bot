@@ -27,6 +27,12 @@ def _client() -> TestClient:
 def test_create_voucher_generates_unique_code():
     c = _client()
 
+    r0 = c.post("/vouchers", json={"user_id": 999, "issued_by": 777})
+    assert r0.status_code == 201
+    vv = r0.json()
+    assert int(vv["user_id"]) == 999
+    assert int(vv["issued_by"]) == 777
+
     r1 = c.get("/vouchers/by-user/1")
     assert r1.status_code == 200
     v1 = r1.json()
@@ -53,3 +59,18 @@ def test_create_voucher_generates_unique_code():
     v4 = r4.json()
     assert v4["code"] == v1["code"]
     assert int(v4["user_id"]) == 2
+
+    r5 = c.get(f"/vouchers/by-code/{v4['code']}")
+    assert r5.status_code == 200
+    v5 = r5.json()
+    assert v5["code"] == v4["code"]
+
+    r6 = c.get("/vouchers?limit=100&offset=0")
+    assert r6.status_code == 200
+    items = r6.json() or []
+    assert any(it.get("code") == v4["code"] for it in items)
+
+    r7 = c.get("/vouchers?active_only=1&limit=100&offset=0")
+    assert r7.status_code == 200
+    act = r7.json() or []
+    assert all(it.get("user_id") is not None for it in act)

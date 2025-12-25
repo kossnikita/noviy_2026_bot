@@ -154,16 +154,19 @@ class Voucher(Base):
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
     )
-    code: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True
-    )
+    code: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     # When user_id is NULL, the code is available for reuse.
     user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    issued_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
-    issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    issued_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+    used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
     use_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )

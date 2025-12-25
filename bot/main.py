@@ -9,7 +9,9 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
-from aiogram.types.bot_command_scope_all_private_chats import BotCommandScopeAllPrivateChats
+from aiogram.types.bot_command_scope_all_private_chats import (
+    BotCommandScopeAllPrivateChats,
+)
 from aiogram.types.bot_command_scope_chat import BotCommandScopeChat
 
 from bot.config import load_config
@@ -31,12 +33,17 @@ from bot.middlewares.command_logging import CommandLoggingMiddleware
 from bot.middlewares.clear_tracks_wait_on_command import (
     ClearTracksWaitOnCommandMiddleware,
 )
-from bot.middlewares.registration_required import RegistrationRequiredMiddleware
+from bot.middlewares.registration_required import (
+    RegistrationRequiredMiddleware,
+)
 from bot.routers.unknown_commands import setup_unknown_commands_router
+from bot.schedulers.vouchers_sync import run_voucher_sync
 
 
 async def _run_api_server(*, host: str, port: int) -> None:
-    raise RuntimeError("Deprecated: API server now runs in a background thread")
+    raise RuntimeError(
+        "Deprecated: API server now runs in a background thread"
+    )
 
 
 @dataclass
@@ -61,7 +68,9 @@ def _start_api_server_thread(*, host: str, port: int) -> _ApiServerHandle:
     )
     server = uvicorn.Server(config)
 
-    thread = threading.Thread(target=server.run, name="api-uvicorn", daemon=True)
+    thread = threading.Thread(
+        target=server.run, name="api-uvicorn", daemon=True
+    )
     thread.start()
     return _ApiServerHandle(server=server, thread=thread)
 
@@ -104,7 +113,9 @@ async def main() -> None:
     users = UserRepo(api)
     chats = ChatRepo(api)
 
-    bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(
+        cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
     dp = Dispatcher(storage=MemoryStorage())
     # Log command invocations (/start, /track, etc.)
     dp.message.middleware(CommandLoggingMiddleware())
@@ -121,6 +132,7 @@ async def main() -> None:
     registry.load_all_plugins()
     try:
         from bot.plugins.loader import registry as _r
+
         logger.info(
             "Loaded %d contest plugin(s), %d system plugin(s)",
             len(_r.plugins),
@@ -133,8 +145,12 @@ async def main() -> None:
     blacklist = BlacklistRepo(api)
     settings = SettingsRepo(api)
 
-    common_router = setup_common_router(users, cfg.admin_id, settings, blacklist)
-    admin_router = setup_admin_router(users, chats, cfg.admin_id, blacklist, settings)
+    common_router = setup_common_router(
+        users, cfg.admin_id, settings, blacklist
+    )
+    admin_router = setup_admin_router(
+        users, chats, cfg.admin_id, blacklist, settings
+    )
     group_router = setup_group_router(chats, users)
     unknown_router = setup_unknown_commands_router()
 
@@ -147,9 +163,13 @@ async def main() -> None:
             BotCommand(command="start", description="Запуск и меню"),
             BotCommand(command="menu", description="Показать конкурсы"),
             BotCommand(command="track", description="Добавить трек в список"),
-            BotCommand(command="mytracks", description="Мои добавленные треки"),
+            BotCommand(
+                command="mytracks", description="Мои добавленные треки"
+            ),
         ]
-        await bot.set_my_commands(user_commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(
+            user_commands, scope=BotCommandScopeAllPrivateChats()
+        )
         logger.info(
             "Registered menu commands for private chats: %s",
             ", ".join([f"/{c.command}" for c in user_commands]),
@@ -158,15 +178,28 @@ async def main() -> None:
         admin_commands = [
             BotCommand(command="admin", description="Админ-панель"),
             BotCommand(command="announce", description="Объявление в группы"),
-            BotCommand(command="tracks_close", description="Закрыть изменения треков"),
-            BotCommand(command="tracks_limit", description="Лимит треков на пользователя"),
-            BotCommand(command="blacklist_add", description="ЧС: добавить тег"),
-            BotCommand(command="blacklist_remove", description="ЧС: удалить тег"),
+            BotCommand(
+                command="tracks_close", description="Закрыть изменения треков"
+            ),
+            BotCommand(
+                command="tracks_limit",
+                description="Лимит треков на пользователя",
+            ),
+            BotCommand(
+                command="blacklist_add", description="ЧС: добавить тег"
+            ),
+            BotCommand(
+                command="blacklist_remove", description="ЧС: удалить тег"
+            ),
             BotCommand(command="blacklist_list", description="ЧС: список"),
-            BotCommand(command="toggle_new_users", description="Вкл/выкл приём новых"),
+            BotCommand(
+                command="toggle_new_users", description="Вкл/выкл приём новых"
+            ),
         ]
         # Set admin commands for admin's private chat specifically
-        await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=cfg.admin_id))
+        await bot.set_my_commands(
+            admin_commands, scope=BotCommandScopeChat(chat_id=cfg.admin_id)
+        )
         logger.info(
             "Registered menu commands for admin chat: %s",
             ", ".join([f"/{c.command}" for c in admin_commands]),
@@ -197,6 +230,10 @@ async def main() -> None:
     logger.info("Starting polling...")
 
     plugin_tasks = registry.start_system_background_tasks(bot)
+    voucher_sync_task = asyncio.create_task(
+        run_voucher_sync(bot=bot, api=api, settings=settings),
+        name="voucher-sync",
+    )
     try:
         await dp.start_polling(bot)
     finally:
@@ -213,6 +250,12 @@ async def main() -> None:
                 await t
             except Exception:
                 pass
+
+        voucher_sync_task.cancel()
+        try:
+            await voucher_sync_task
+        except Exception:
+            pass
 
         if api_server is not None:
             api_server.thread.join(timeout=5)

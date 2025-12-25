@@ -180,6 +180,7 @@ class PrizeWinsCreate(BaseModel):
 
 class VoucherCreate(BaseModel):
     user_id: int
+    issued_by: Optional[int] = None
 
 
 class VoucherUse(BaseModel):
@@ -190,8 +191,11 @@ class VoucherOut(_ORM):
     id: int
     code: str
     user_id: Optional[int] = None
+    issued_by: Optional[int] = None
     created_at: datetime
+    issued_at: Optional[datetime] = None
     used_at: Optional[datetime] = None
+    use_count: int = 0
 
 
 # ---- Photos ----

@@ -421,6 +421,71 @@
       }
     },
     "/vouchers": {
+      "get": {
+        "tags": [
+          "vouchers"
+        ],
+        "summary": "List Vouchers",
+        "operationId": "list_vouchers_vouchers_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Active Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VoucherOut"
+                  },
+                  "title": "Response List Vouchers Vouchers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "vouchers"
@@ -428,14 +493,14 @@
         "summary": "Create Voucher",
         "operationId": "create_voucher_vouchers_post",
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VoucherCreate"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -476,6 +541,48 @@
             "schema": {
               "type": "integer",
               "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoucherOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vouchers/by-code/{code}": {
+      "get": {
+        "tags": [
+          "vouchers"
+        ],
+        "summary": "Get Voucher By Code",
+        "operationId": "get_voucher_by_code_vouchers_by_code__code__get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
             }
           }
         ],
@@ -2807,6 +2914,17 @@
           "user_id": {
             "type": "integer",
             "title": "User Id"
+          },
+          "issued_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued By"
           }
         },
         "type": "object",
@@ -2836,10 +2954,33 @@
             ],
             "title": "User Id"
           },
+          "issued_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued By"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
           },
           "used_at": {
             "anyOf": [
@@ -2852,6 +2993,11 @@
               }
             ],
             "title": "Used At"
+          },
+          "use_count": {
+            "type": "integer",
+            "title": "Use Count",
+            "default": 0
           }
         },
         "type": "object",

@@ -18,12 +18,23 @@ def _generate_code() -> str:
     return f"{random.randint(0, 9999):06d}"
 
 
-def _issue_voucher_for_user(request: Request, user_id: int) -> Voucher:
+def _issue_voucher_for_user(
+    request: Request, user_id: int, issued_by: int | None = None
+) -> Voucher:
     now = datetime.now(UTC)
     with request.app.state.db.session() as s:
         # If the user already has an active voucher, return it.
-        existing = s.scalar(select(Voucher).where(Voucher.user_id == int(user_id)))
+        existing = s.scalar(
+            select(Voucher).where(Voucher.user_id == int(user_id))
+        )
         if existing is not None:
+            if (
+                issued_by is not None
+                and getattr(existing, "issued_by", None) is None
+            ):
+                existing.issued_by = int(issued_by)
+                s.commit()
+                s.refresh(existing)
             return existing
 
         # Reuse the oldest available voucher (released after usage).
@@ -36,6 +47,8 @@ def _issue_voucher_for_user(request: Request, user_id: int) -> Voucher:
         if available is not None:
             available.user_id = int(user_id)
             available.issued_at = now
+            if issued_by is not None:
+                available.issued_by = int(issued_by)
             s.commit()
             s.refresh(available)
             return available
@@ -43,7 +56,12 @@ def _issue_voucher_for_user(request: Request, user_id: int) -> Voucher:
         # Otherwise, create a new code.
         for _ in range(10000):
             code = _generate_code()
-            v = Voucher(code=code, user_id=int(user_id), issued_at=now)
+            v = Voucher(
+                code=code,
+                user_id=int(user_id),
+                issued_at=now,
+                issued_by=(int(issued_by) if issued_by is not None else None),
+            )
             s.add(v)
             try:
                 s.commit()
@@ -59,18 +77,56 @@ def _issue_voucher_for_user(request: Request, user_id: int) -> Voucher:
         )
 
 
+@router.get("", response_model=list[VoucherOut])
+def list_vouchers(
+    request: Request,
+    limit: int = 200,
+    offset: int = 0,
+    active_only: int = 0,
+) -> list[VoucherOut]:
+    with request.app.state.db.session() as s:
+        stmt = (
+            select(Voucher)
+            .order_by(Voucher.id.desc())
+            .limit(int(limit))
+            .offset(int(offset))
+        )
+        if int(active_only) == 1:
+            stmt = stmt.where(Voucher.user_id.is_not(None))
+        return [VoucherOut.model_validate(v) for v in s.scalars(stmt).all()]
+
+
 @router.post(
     "", response_model=VoucherOut, status_code=status.HTTP_201_CREATED
 )
 def create_voucher(payload: VoucherCreate, request: Request) -> VoucherOut:
-    v = _issue_voucher_for_user(request, int(payload.user_id))
+    v = _issue_voucher_for_user(
+        request,
+        int(payload.user_id),
+        int(payload.issued_by) if payload.issued_by is not None else None,
+    )
     return VoucherOut.model_validate(v)
 
 
 @router.get("/by-user/{user_id}", response_model=VoucherOut)
-def get_or_create_voucher_by_user(user_id: int, request: Request) -> VoucherOut:
-    v = _issue_voucher_for_user(request, int(user_id))
+def get_or_create_voucher_by_user(
+    user_id: int, request: Request
+) -> VoucherOut:
+    v = _issue_voucher_for_user(request, int(user_id), None)
     return VoucherOut.model_validate(v)
+
+
+@router.get("/by-code/{code}", response_model=VoucherOut)
+def get_voucher_by_code(code: str, request: Request) -> VoucherOut:
+    key = (code or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="code is required")
+
+    with request.app.state.db.session() as s:
+        v = s.scalar(select(Voucher).where(Voucher.code == key))
+        if v is None:
+            raise HTTPException(status_code=404, detail="Voucher not found")
+        return VoucherOut.model_validate(v)
 
 
 @router.post("/used", response_model=VoucherOut)
