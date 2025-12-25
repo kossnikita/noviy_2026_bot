@@ -59,11 +59,7 @@ def _is_closed(settings: SettingsRepo) -> tuple[bool, int | None]:
 
 
 def _closed_text(close_ts: int) -> str:
-    dt = datetime.fromtimestamp(close_ts, tz=timezone.utc)
-    return (
-        "Список треков закрыт для изменений.\n"
-        f"Время закрытия (UTC): {dt:%Y-%m-%d %H:%M}"
-    )
+    return "Список треков закрыт для изменений.\n"
 
 
 def _get_max_tracks_per_user(settings: SettingsRepo, *, fallback: int) -> int:
@@ -162,7 +158,7 @@ class Plugin:
         *,
         key: tuple[int, int],
         state: FSMContext,
-        expected_state: str,
+        expected_state: str | None,
         timeout_s: int,
     ) -> None:
         self._cancel_state_timeout(key)
@@ -171,7 +167,7 @@ class Plugin:
             try:
                 await asyncio.sleep(timeout_s)
                 cur = await state.get_state()
-                if cur == expected_state:
+                if expected_state is not None and cur == expected_state:
                     await state.clear()
             except asyncio.CancelledError:
                 raise
@@ -252,12 +248,6 @@ class Plugin:
                             "Попробуйте ссылку или более точный запрос."
                         )
                         return
-
-                if self._tracks.exists_spotify_id(track.spotify_id):
-                    await message.answer(
-                        "Этот трек уже кто-то добавил. Попробуй другой."
-                    )
-                    return
 
                 await state.update_data(
                     candidate={
@@ -396,20 +386,48 @@ class Plugin:
             await _handle_query(message, state, message.text or "")
 
         @router.callback_query(F.data == "track:cancel")
-        async def cancel(cb: CallbackQuery, state: FSMContext) -> None:
+        async def cancel(
+            cb: CallbackQuery, state: FSMContext, bot: Bot
+        ) -> None:
+            prompt = cb.message
             if cb.message and cb.from_user:
                 self._cancel_state_timeout(
                     (cb.message.chat.id, cb.from_user.id)
                 )
-            await state.clear()
             await cb.answer("Отменено")
+            try:
+                await state.update_data(candidate=None)
+            except Exception:
+                pass
+            await state.set_state(_TrackStates.waiting_query)
+            if cb.message and cb.from_user:
+                try:
+                    self._arm_state_timeout(
+                        key=(cb.message.chat.id, cb.from_user.id),
+                        state=state,
+                        expected_state=_TrackStates.waiting_query.state,
+                        timeout_s=_WAIT_QUERY_TIMEOUT_S,
+                    )
+                except Exception:
+                    _LOG.exception("Failed to arm query timeout")
             if cb.message:
                 await cb.message.answer(
-                    "Ок, отменил. Чтобы добавить заново: /track"
+                    "Пришли новый трек. Попробуй ссылку, если не находит по названию."
                 )
+            if prompt is not None:
+                try:
+                    await bot.delete_message(
+                        chat_id=prompt.chat.id,
+                        message_id=prompt.message_id,
+                    )
+                except Exception as e:
+                    _LOG.exception("Failed to delete message: %s", e)
 
         @router.callback_query(F.data.startswith("track:add:"))
-        async def confirm_add(cb: CallbackQuery, state: FSMContext) -> None:
+        async def confirm_add(
+            cb: CallbackQuery, state: FSMContext, bot: Bot
+        ) -> None:
+            prompt = cb.message
             if not cb.from_user or not cb.data:
                 await cb.answer()
                 return
@@ -419,66 +437,85 @@ class Plugin:
                     (cb.message.chat.id, cb.from_user.id)
                 )
 
-            closed, close_ts = _is_closed(self._settings)
-            if closed and close_ts is not None:
-                await cb.answer("Закрыто", show_alert=True)
-                if cb.message:
-                    await cb.message.answer(_closed_text(close_ts))
+            try:
+                closed, close_ts = _is_closed(self._settings)
+                if closed and close_ts is not None:
+                    await cb.answer("Закрыто", show_alert=True)
+                    if cb.message:
+                        await cb.message.answer(_closed_text(close_ts))
+                    await state.clear()
+                    return
+
+                data = await state.get_data()
+                cand = (data or {}).get("candidate")
+                if not cand:
+                    await cb.answer("Нет данных для добавления")
+                    return
+
+                spotify_id = cb.data.split(":", 2)[2]
+                if spotify_id != cand.get("spotify_id"):
+                    await cb.answer("Устаревшее подтверждение")
+                    return
+
+                if self._tracks.exists_spotify_id(spotify_id=spotify_id):
+                    await cb.answer("Уже добавлен")
+                    if cb.message:
+                        await cb.message.answer(
+                            "Этот трек уже добавлен кем-то."
+                        )
+                    await state.clear()
+                    return
+
+                max_tracks = _get_max_tracks_per_user(
+                    self._settings, fallback=self._max_tracks_per_user
+                )
+                current_count = self._tracks.count_by_user(cb.from_user.id)
+                if max_tracks != 0 and current_count >= max_tracks:
+                    await cb.answer("Лимит")
+                    if cb.message:
+                        await cb.message.answer(
+                            f"Лимит треков: {max_tracks}. Удалите трек через /mytracks."
+                        )
+                    await state.clear()
+                    return
+
+                ok = self._tracks.add_track(
+                    spotify_id=spotify_id,
+                    name=cand.get("name") or "",
+                    artist=cand.get("artist") or "",
+                    url=cand.get("url"),
+                    added_by=cb.from_user.id,
+                )
                 await state.clear()
-                return
+                if not ok:
+                    await cb.answer("Ошибка")
+                    if cb.message:
+                        await cb.message.answer(
+                            "При добавлении трека произошла ошибка. Попробуйте позже."
+                        )
+                    return
 
-            data = await state.get_data()
-            cand = (data or {}).get("candidate")
-            if not cand:
-                await cb.answer("Нет данных для добавления")
-                return
-
-            spotify_id = cb.data.split(":", 2)[2]
-            if spotify_id != cand.get("spotify_id"):
-                await cb.answer("Устаревшее подтверждение")
-                return
-
-            if self._tracks.exists_spotify_id(spotify_id=spotify_id):
-                await cb.answer("Уже добавлен")
-                if cb.message:
-                    await cb.message.answer("Этот трек уже добавлен кем-то.")
-                await state.clear()
-                return
-
-            max_tracks = _get_max_tracks_per_user(
-                self._settings, fallback=self._max_tracks_per_user
-            )
-            if (
-                max_tracks != 0
-                and self._tracks.count_by_user(cb.from_user.id) >= max_tracks
-            ):
-                await cb.answer("Лимит")
+                current_count = self._tracks.count_by_user(cb.from_user.id)
+                await cb.answer("Добавлено")
                 if cb.message:
                     await cb.message.answer(
-                        f"Лимит треков: {max_tracks}. Удалите трек через /mytracks."
+                        "Готово! Трек добавлен в общий список."
+                        + (
+                            f"У вас осталось {max_tracks - current_count} из {max_tracks} треков."
+                            " Добавить ещё трек: /track"
+                            if max_tracks != 0 and current_count < max_tracks
+                            else ""
+                        )
                     )
-                await state.clear()
-                return
-
-            ok = self._tracks.add_track(
-                spotify_id=spotify_id,
-                name=cand.get("name") or "",
-                artist=cand.get("artist") or "",
-                url=cand.get("url"),
-                added_by=cb.from_user.id,
-            )
-            await state.clear()
-            if not ok:
-                await cb.answer("Уже добавлен")
-                if cb.message:
-                    await cb.message.answer("Этот трек уже добавлен кем-то.")
-                return
-
-            await cb.answer("Добавлено")
-            if cb.message:
-                await cb.message.answer(
-                    "Готово! Трек добавлен в общий список."
-                )
+            finally:
+                if prompt is not None:
+                    try:
+                        await bot.delete_message(
+                            chat_id=prompt.chat.id,
+                            message_id=prompt.message_id,
+                        )
+                    except Exception as e:
+                        _LOG.exception("Failed to delete message: %s", e)
 
         @router.message(Command("mytracks"), F.chat.type == ChatType.PRIVATE)
         async def mytracks(message: Message) -> None:
@@ -519,7 +556,7 @@ class Plugin:
                 await message.answer(text, reply_markup=_delete_kb(spotify_id))
 
         @router.callback_query(F.data.startswith("track:del:"))
-        async def delete_track(cb: CallbackQuery) -> None:
+        async def delete_track(cb: CallbackQuery, bot: Bot) -> None:
             if not cb.from_user or not cb.data:
                 await cb.answer()
                 return
@@ -536,7 +573,23 @@ class Plugin:
             if deleted:
                 await cb.answer("Удалено")
                 if cb.message:
-                    await cb.message.answer("Трек удалён.")
+                    try:
+                        await bot.delete_message(
+                            chat_id=cb.message.chat.id,
+                            message_id=cb.message.message_id,
+                        )
+                    except Exception:
+                        # If we can't delete the message for some reason,
+                        # still provide a visible confirmation.
+                        try:
+                            await cb.message.answer("Трек удалён.")
+                        except Exception:
+                            pass
+                        _LOG.exception(
+                            "Failed to delete track message chat_id=%s msg_id=%s",
+                            cb.message.chat.id,
+                            cb.message.message_id,
+                        )
             else:
                 await cb.answer("Не найден")
                 if cb.message:
