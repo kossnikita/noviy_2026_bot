@@ -5,7 +5,6 @@
   "scripts": {
     "build": "node tools/build-overlay.mjs",
     "build:watch": "node tools/build-overlay.mjs --watch",
-    "serve": "node tools/serve.mjs",
     "clean": "node tools/clean.mjs",
     "test": "vitest run",
     "test:watch": "vitest"

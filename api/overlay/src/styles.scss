@@ -39,6 +39,20 @@ body {
     overflow: hidden;
 }
 
+.overlay-play-button {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 9999;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: none;
+}
+
 .bg {
     position: absolute;
     inset: 0;
@@ -179,6 +193,40 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.10);
     color: rgba(255, 255, 255, 0.75);
     font-size: 12px;
+}
+
+.overlay-spotify-auth {
+    position: fixed;
+    right: 16px;
+    bottom: 64px;
+    z-index: 9999;
+    max-width: 360px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 14px;
+    display: none;
+}
+
+.overlay-spotify-auth__message {
+    margin-bottom: 8px;
+}
+
+.overlay-spotify-auth__button {
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    cursor: pointer;
+}
+
+.overlay-spotify-embed {
+    display: none;
+    border: 0;
+    width: 300px;
+    height: 80px;
 }
 
 .isHidden {
