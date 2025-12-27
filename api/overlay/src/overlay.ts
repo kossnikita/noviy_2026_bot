@@ -21,7 +21,10 @@ import {
     initSpotifyPlayerIfNeeded as initSpotifyPlayerIfNeededModule,
     spotifyPause as spotifyPauseModule,
     spotifyPlayTrack as spotifyPlayTrackModule,
+    enqueueSpotifyTrack as enqueueSpotifyTrackModule,
+    spotifyNext as spotifyNextModule,
 } from "./overlay/spotify_sdk";
+import { SpotifyQueueManager } from "./overlay/spotify_queue";
 
 declare global {
     interface Window {
@@ -32,6 +35,8 @@ declare global {
 
 let pendingPlayback: PendingPlayback = { kind: "none" };
 let lastPhotoId = 0;
+let spotifyCurrentTrackId: string | null = null;
+let spotifyLastPlayingState = false;
 
 const playButton = (() => {
     try {
@@ -129,6 +134,12 @@ const playSpotifyTrack = (spotifyId: string) =>
 
 const pauseSpotify = () => spotifyPauseModule(getSpotifyAccessToken);
 
+const enqueueSpotifyTrack = (spotifyId: string) =>
+    enqueueSpotifyTrackModule(spotifyId, getSpotifyAccessToken);
+
+const spotifyNext = () => spotifyNextModule(getSpotifyAccessToken);
+const spotifyQueueManager = new SpotifyQueueManager(enqueueSpotifyTrack);
+
 async function tryPlayPendingPlayback() {
     const current = pendingPlayback;
     if (current.kind === "audio") {
@@ -192,6 +203,7 @@ wsConnect(
                         renderTrack({ title: cur.name || "", artists: cur.artist || "", coverUrl: "" }, "");
                     }
                 }
+
                 let audioUrl = cur && cur.url ? String(cur.url) : "";
                 if (audioUrl.includes("open.spotify.com/track")) {
                     try {
@@ -206,6 +218,12 @@ wsConnect(
                         audioUrl = "";
                     }
                 }
+
+                const fallbackSpotifyId = cur && cur.spotify_id ? String(cur.spotify_id) : "";
+                const summary = spotifyQueueManager.summarize(state, fallbackSpotifyId);
+                const playlistIndex = summary.playlistIndex;
+                const spotifyTrackId = summary.spotifyTrackId;
+
                 if (audioUrl) {
                     if (state.playing) {
                         try {
@@ -220,30 +238,64 @@ wsConnect(
                         pendingPlayback = { kind: "none" };
                         showPlayButton(false);
                     }
+                    spotifyQueueManager.reset();
                     hideSpotifyEmbed();
-                } else if (cur && cur.spotify_id) {
+                } else if (spotifyTrackId) {
                     try {
                         const ready = await initSpotifyPlayerIfNeeded();
                         if (ready) {
+                            let playbackTriggered = false;
+                            let playbackFailed = false;
                             if (state.playing) {
-                                try {
-                                    await playSpotifyTrack(String(cur.spotify_id));
-                                    showPlayButton(false);
-                                    pendingPlayback = { kind: "none" };
-                                } catch (err) {
-                                    pendingPlayback = { kind: "spotify", spotifyId: String(cur.spotify_id) };
-                                    showPlayButton(true, "Play");
+                                const needsPlay =
+                                    spotifyTrackId !== spotifyCurrentTrackId ||
+                                    !spotifyLastPlayingState;
+                                if (needsPlay) {
+                                    try {
+                                        if (spotifyQueueManager.shouldUseNext(summary)) {
+                                            await spotifyNext();
+                                        } else {
+                                            await playSpotifyTrack(spotifyTrackId);
+                                        }
+                                        pendingPlayback = { kind: "none" };
+                                        showPlayButton(false);
+                                        playbackTriggered = true;
+                                    } catch (err) {
+                                        playbackFailed = true;
+                                        pendingPlayback = { kind: "spotify", spotifyId: spotifyTrackId };
+                                        showPlayButton(true, "Play");
+                                    }
                                 }
-                            } else {
+                            } else if (spotifyLastPlayingState) {
                                 await pauseSpotify();
                                 pendingPlayback = { kind: "none" };
                                 showPlayButton(false);
                             }
+
+                            if (state.playing && !playbackFailed) {
+                                spotifyLastPlayingState = true;
+                                spotifyCurrentTrackId = spotifyTrackId;
+                            } else if (!state.playing) {
+                                spotifyLastPlayingState = false;
+                                spotifyCurrentTrackId = null;
+                            }
+
+                            if (!playbackFailed && spotifyTrackId) {
+                                spotifyQueueManager.consume(spotifyTrackId);
+                                if (playlistIndex >= 0) {
+                                    await spotifyQueueManager.preload(summary);
+                                }
+                            }
+
+                            if (playbackTriggered) {
+                                spotifyCurrentTrackId = spotifyTrackId;
+                            }
+
                             hideSpotifyEmbed();
                         } else {
                             hideSpotifyEmbed();
                             if (state.playing) {
-                                pendingPlayback = { kind: "spotify", spotifyId: String(cur.spotify_id) };
+                                pendingPlayback = { kind: "spotify", spotifyId: spotifyTrackId };
                                 showPlayButton(true, "Play");
                             } else {
                                 pendingPlayback = { kind: "none" };
@@ -254,7 +306,7 @@ wsConnect(
                     } catch (err) {
                         hideSpotifyEmbed();
                         if (state.playing) {
-                            pendingPlayback = { kind: "spotify", spotifyId: String(cur.spotify_id) };
+                            pendingPlayback = { kind: "spotify", spotifyId: spotifyTrackId };
                             showPlayButton(true, "Play");
                         } else {
                             pendingPlayback = { kind: "none" };
@@ -262,6 +314,7 @@ wsConnect(
                         }
                     }
                 } else {
+                    spotifyQueueManager.reset();
                     pauseAudio();
                     hideSpotifyEmbed();
                     pendingPlayback = { kind: "none" };

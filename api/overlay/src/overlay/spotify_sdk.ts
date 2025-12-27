@@ -150,6 +150,13 @@ export async function spotifyApiRequest(path: string, method: string, body: any,
     return r;
 }
 
+export async function enqueueSpotifyTrack(spotifyId: string, getSpotifyAccessToken: () => Promise<string | null>) {
+    if (!spotifyDeviceId) throw new Error("No spotify device id");
+    const uri = `spotify:track:${spotifyId}`;
+    const path = `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(spotifyDeviceId)}`;
+    await spotifyApiRequest(path, "POST", undefined, getSpotifyAccessToken);
+}
+
 export async function fetchSpotifyAccessTokenFromBackend(cfg: OverlayConfig, apiUrl: (p: string) => string, _overlayAuthHeader: () => string | null, showSpotifyAuthPanel: (visible: boolean, message?: string) => void, hideSpotifyEmbed: () => void, setStatus: (msg: string) => void, opts?: { force?: boolean }): Promise<string | null> {
     const now = Date.now();
     if (!opts?.force && now - spotifyTokenLastAttemptAt < 60_000) return spotifyAccessToken;
@@ -169,7 +176,7 @@ export async function fetchSpotifyAccessTokenFromBackend(cfg: OverlayConfig, api
                 try {
                     const j = JSON.parse(text);
                     if (j && typeof j.detail === "string") detail = j.detail;
-                } catch {}
+                } catch { }
                 showSpotifyAuthPanel(true, detail);
             } else if (r.status === 401 || r.status === 403) {
                 showSpotifyAuthPanel(true, "Spotify auth requires a valid OVERLAY_API_TOKEN.");
@@ -214,7 +221,7 @@ export async function fetchSpotifyProfile(getSpotifyAccessToken: () => Promise<s
         const data = await r.json();
         const product = (data && data.product) ? String(data.product) : "unknown";
         setStatus(`spotify: ${product}`);
-    } catch {}
+    } catch { }
 }
 
 export async function spotifyPlayTrack(spotifyId: string, getSpotifyAccessToken: () => Promise<string | null>, setStatus: (msg: string) => void) {
@@ -224,7 +231,7 @@ export async function spotifyPlayTrack(spotifyId: string, getSpotifyAccessToken:
     }
     try {
         await spotifyApiRequest("/me/player", "PUT", { device_ids: [spotifyDeviceId], play: false }, getSpotifyAccessToken);
-    } catch {}
+    } catch { }
     const uri = `spotify:track:${spotifyId}`;
     await spotifyApiRequest(`/me/player/play?device_id=${encodeURIComponent(spotifyDeviceId!)}`, "PUT", { uris: [uri] }, getSpotifyAccessToken);
 }
