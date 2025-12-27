@@ -86,7 +86,7 @@ const playButton = (() => {
     try {
         const b = document.createElement("button");
         b.id = "noviy-play-button";
-        b.textContent = "Play audio";
+        b.textContent = "Play";
         b.style.position = "fixed";
         b.style.right = "16px";
         b.style.bottom = "16px";
@@ -105,17 +105,57 @@ const playButton = (() => {
     }
 })();
 
-function showPlayButton(visible: boolean) {
+type PendingPlayback =
+    | { kind: "none" }
+    | { kind: "audio"; src: string }
+    | { kind: "spotify"; spotifyId: string };
+
+let pendingPlayback: PendingPlayback = { kind: "none" };
+
+function showPlayButton(visible: boolean, label?: string) {
     if (!playButton) return;
+    if (label) playButton.textContent = label;
     playButton.style.display = visible ? "block" : "none";
 }
 
 async function userGesturePlay() {
-    if (!audioEl) return;
     try {
-        await audioEl.play();
-        console.log("overlay: user-initiated play succeeded");
-        showPlayButton(false);
+        if (pendingPlayback.kind === "spotify") {
+            const spotifyId = pendingPlayback.spotifyId;
+            pendingPlayback = { kind: "none" };
+            const ready = await initSpotifyPlayerIfNeeded();
+            if (!ready) throw new Error("Spotify player is not ready");
+
+            // Important: autoplay policies often require a user gesture.
+            // Spotify SDK provides activateElement() to satisfy this.
+            try {
+                const fn = spotifyPlayer && typeof spotifyPlayer.activateElement === "function" ? spotifyPlayer.activateElement : null;
+                if (fn) await fn.call(spotifyPlayer);
+            } catch (e) {
+                console.warn("overlay: spotify activateElement failed", e);
+            }
+
+            await spotifyPlayTrack(spotifyId);
+            console.log("overlay: user-initiated spotify play succeeded");
+            showPlayButton(false);
+            return;
+        }
+
+        if (pendingPlayback.kind === "audio") {
+            const src = pendingPlayback.src;
+            pendingPlayback = { kind: "none" };
+            await playAudioSrc(src);
+            console.log("overlay: user-initiated audio play succeeded");
+            showPlayButton(false);
+            return;
+        }
+
+        // Best-effort fallback: play current audio element if any.
+        if (audioEl) {
+            await audioEl.play();
+            console.log("overlay: user-initiated play (fallback) succeeded");
+            showPlayButton(false);
+        }
     } catch (e) {
         console.error("overlay: user-initiated play failed", e);
     }
@@ -999,10 +1039,13 @@ function wsConnect() {
                                         showPlayButton(false);
                                     } catch (e) {
                                         console.warn("overlay: autoplay blocked, showing play button", e);
-                                        showPlayButton(true);
+                                        pendingPlayback = { kind: "audio", src: audioUrl };
+                                        showPlayButton(true, "Play");
                                     }
                                 } else {
                                     pauseAudio();
+                                    pendingPlayback = { kind: "none" };
+                                    showPlayButton(false);
                                 }
                                 // hide spotify embed when using direct audio
                                 hideSpotifyEmbed();
@@ -1012,15 +1055,32 @@ function wsConnect() {
                                     const ready = await initSpotifyPlayerIfNeeded();
                                     if (ready) {
                                         if (state.playing) {
-                                            await spotifyPlayTrack(String(cur.spotify_id));
+                                            try {
+                                                await spotifyPlayTrack(String(cur.spotify_id));
+                                                showPlayButton(false);
+                                                pendingPlayback = { kind: "none" };
+                                            } catch (e) {
+                                                console.warn("overlay: spotify autoplay blocked/failed; need user gesture", e);
+                                                pendingPlayback = { kind: "spotify", spotifyId: String(cur.spotify_id) };
+                                                showPlayButton(true, "Play");
+                                            }
                                         } else {
                                             await spotifyPause();
+                                            pendingPlayback = { kind: "none" };
+                                            showPlayButton(false);
                                         }
                                         // hide iframe fallback
                                         hideSpotifyEmbed();
                                     } else {
                                         // Widget disabled during normal work; keep hidden.
                                         hideSpotifyEmbed();
+                                        if (state.playing) {
+                                            pendingPlayback = { kind: "spotify", spotifyId: String(cur.spotify_id) };
+                                            showPlayButton(true, "Play");
+                                        } else {
+                                            pendingPlayback = { kind: "none" };
+                                            showPlayButton(false);
+                                        }
                                         if (!state.playing) pauseAudio();
                                     }
                                 } catch (e) {
@@ -1029,11 +1089,20 @@ function wsConnect() {
                                         e
                                     );
                                     hideSpotifyEmbed();
+                                    if (state.playing) {
+                                        pendingPlayback = { kind: "spotify", spotifyId: String(cur.spotify_id) };
+                                        showPlayButton(true, "Play");
+                                    } else {
+                                        pendingPlayback = { kind: "none" };
+                                        showPlayButton(false);
+                                    }
                                 }
                             } else {
                                 // nothing to play; ensure pause
                                 pauseAudio();
                                 hideSpotifyEmbed();
+                                pendingPlayback = { kind: "none" };
+                                showPlayButton(false);
                             }
                         }
                     } catch (e) {
