@@ -22,19 +22,9 @@ def _issue_voucher_for_user(
     request: Request, user_id: int, issued_by: int | None = None
 ) -> Voucher:
     with request.app.state.db.session() as s:
-        # If the user already has an active voucher, return it.
-        existing = s.scalar(
-            select(Voucher).where(Voucher.user_id == int(user_id))
-        )
-        if existing is not None:
-            if (
-                issued_by is not None
-                and getattr(existing, "issued_by", None) is None
-            ):
-                existing.issued_by = int(issued_by)
-                s.commit()
-                s.refresh(existing)
-            return existing
+        # Previously we returned an existing active voucher for the user.
+        # Users may now have unlimited vouchers, so always proceed to allocate
+        # a new or available voucher instead of returning the existing one.
 
         # Reuse the oldest available voucher (released after usage).
         available = s.scalar(
