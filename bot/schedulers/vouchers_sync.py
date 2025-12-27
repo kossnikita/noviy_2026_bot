@@ -169,14 +169,12 @@ async def run_voucher_sync(
                             except Exception:
                                 continue
 
-                        # "New voucher appeared" = code not previously sent to this user.
-                        if code in prev_codes:
-                            continue
+                    # "New voucher appeared" = code not previously sent to this user.
+                    if code in prev_codes:
+                        continue
 
-                        png = _make_qr_png_bytes(code)
-                    photo = BufferedInputFile(
-                        png, filename=f"voucher_{code}.png"
-                    )
+                    png = _make_qr_png_bytes(code)
+                    photo = BufferedInputFile(png, filename=f"voucher_{code}.png")
                     try:
                         sent = await bot.send_photo(
                             chat_id=user_id,
