@@ -5,13 +5,13 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/slot/wins": {
+    "/slot/win": {
       "get": {
         "tags": [
           "slot"
         ],
         "summary": "List Wins",
-        "operationId": "list_wins_slot_wins_get",
+        "operationId": "list_wins_slot_win_get",
         "parameters": [
           {
             "name": "limit",
@@ -44,7 +44,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PrizeWinOut"
                   },
-                  "title": "Response List Wins Slot Wins Get"
+                  "title": "Response List Wins Slot Win Get"
                 }
               }
             }
@@ -66,7 +66,7 @@
           "slot"
         ],
         "summary": "Create Wins",
-        "operationId": "create_wins_slot_wins_post",
+        "operationId": "create_wins_slot_win_post",
         "requestBody": {
           "required": true,
           "content": {
@@ -87,7 +87,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PrizeWinOut"
                   },
-                  "title": "Response Create Wins Slot Wins Post"
+                  "title": "Response Create Wins Slot Win Post"
                 }
               }
             }
@@ -105,13 +105,13 @@
         }
       }
     },
-    "/slot/wins/by-user/{user_id}": {
+    "/slot/win/by-user/{user_id}": {
       "get": {
         "tags": [
           "slot"
         ],
         "summary": "List Wins By User",
-        "operationId": "list_wins_by_user_slot_wins_by_user__user_id__get",
+        "operationId": "list_wins_by_user_slot_win_by_user__user_id__get",
         "parameters": [
           {
             "name": "user_id",
@@ -153,7 +153,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PrizeWinOut"
                   },
-                  "title": "Response List Wins By User Slot Wins By User  User Id  Get"
+                  "title": "Response List Wins By User Slot Win By User  User Id  Get"
                 }
               }
             }
@@ -171,13 +171,13 @@
         }
       }
     },
-    "/slot/wins/count": {
+    "/slot/win/count": {
       "get": {
         "tags": [
           "slot"
         ],
         "summary": "Count Wins",
-        "operationId": "count_wins_slot_wins_count_get",
+        "operationId": "count_wins_slot_win_count_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -192,13 +192,13 @@
         }
       }
     },
-    "/slot": {
+    "/slot/prize": {
       "get": {
         "tags": [
           "slot"
         ],
         "summary": "List Prizes",
-        "operationId": "list_prizes_slot_get",
+        "operationId": "list_prizes_slot_prize_get",
         "parameters": [
           {
             "name": "limit",
@@ -231,7 +231,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PrizeOut"
                   },
-                  "title": "Response List Prizes Slot Get"
+                  "title": "Response List Prizes Slot Prize Get"
                 }
               }
             }
@@ -253,7 +253,7 @@
           "slot"
         ],
         "summary": "Create Prize",
-        "operationId": "create_prize_slot_post",
+        "operationId": "create_prize_slot_prize_post",
         "requestBody": {
           "required": true,
           "content": {
@@ -288,13 +288,13 @@
         }
       }
     },
-    "/slot/{name}": {
+    "/slot/prize/{name}": {
       "get": {
         "tags": [
           "slot"
         ],
         "summary": "Get Prize",
-        "operationId": "get_prize_slot__name__get",
+        "operationId": "get_prize_slot_prize__name__get",
         "parameters": [
           {
             "name": "name",
@@ -334,7 +334,7 @@
           "slot"
         ],
         "summary": "Update Prize",
-        "operationId": "update_prize_slot__name__put",
+        "operationId": "update_prize_slot_prize__name__put",
         "parameters": [
           {
             "name": "name",
@@ -384,7 +384,7 @@
           "slot"
         ],
         "summary": "Delete Prize",
-        "operationId": "delete_prize_slot__name__delete",
+        "operationId": "delete_prize_slot_prize__name__delete",
         "parameters": [
           {
             "name": "name",

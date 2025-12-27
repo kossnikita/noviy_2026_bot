@@ -28,13 +28,13 @@ def _client_with_token() -> TestClient:
 def test_client_submits_wins_and_api_lists_them():
     c = _client_with_token()
 
-    r0 = c.post("/slot", json={"name": "p1", "title": "Prize 1"})
+    r0 = c.post("/slot/prize", json={"name": "p1", "title": "Prize 1"})
     assert r0.status_code == 201
-    r1 = c.post("/slot", json={"name": "p2", "title": "Prize 2"})
+    r1 = c.post("/slot/prize", json={"name": "p2", "title": "Prize 2"})
     assert r1.status_code == 201
 
     r = c.post(
-        "/slot/wins",
+        "/slot/win",
         json={
             "wins": [
                 {"user_id": 123, "prize_name": "p1"},
@@ -50,14 +50,14 @@ def test_client_submits_wins_and_api_lists_them():
     assert created[0]["prize"]["name"] in {"p1", "p2"}
     assert created[0]["prize"]["title"] in {"Prize 1", "Prize 2"}
 
-    r2 = c.get("/slot/wins")
+    r2 = c.get("/slot/win")
     assert r2.status_code == 200
     assert len(r2.json()) == 2
 
-    r3 = c.get("/slot/wins/by-user/123")
+    r3 = c.get("/slot/win/by-user/123")
     assert r3.status_code == 200
     assert len(r3.json()) == 2
 
-    r4 = c.get("/slot/wins/count")
+    r4 = c.get("/slot/win/count")
     assert r4.status_code == 200
     assert int(r4.json()["count"]) == 2
