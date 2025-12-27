@@ -144,6 +144,17 @@ function ensureSpotifyIframe() {
     }
 }
 
+function hideSpotifyEmbed() {
+    if (!spotifyIframe) return;
+    try {
+        spotifyIframe.style.display = "none";
+        // Clear src to stop any playback/network.
+        spotifyIframe.src = "about:blank";
+    } catch {
+        // ignore
+    }
+}
+
 // --- Spotify authorization UI (when backend says "Spotify is not connected") ---
 const spotifyAuthPanel = (() => {
     try {
@@ -187,15 +198,24 @@ const spotifyAuthPanel = (() => {
 })();
 
 let spotifyAuthPollTimer: number | null = null;
+let spotifyAuthPanelVisible = false;
 
 function showSpotifyAuthPanel(visible: boolean, message?: string) {
     if (!spotifyAuthPanel) return;
     if (message) spotifyAuthPanel.msg.textContent = message;
     spotifyAuthPanel.wrap.style.display = visible ? "block" : "none";
+    spotifyAuthPanelVisible = visible;
     if (!visible && spotifyAuthPollTimer) {
         window.clearInterval(spotifyAuthPollTimer);
         spotifyAuthPollTimer = null;
     }
+    if (!visible) hideSpotifyEmbed();
+}
+
+function allowSpotifyEmbedWidgetNow(): boolean {
+    // Per request: do not show Spotify iframe widget during normal work.
+    // Allow only while we are obtaining a Spotify token (auth panel is visible).
+    return spotifyAuthPanelVisible;
 }
 
 function spotifyLoginUrl(): string | null {
@@ -271,8 +291,13 @@ function pauseAudio() {
 }
 
 function showSpotifyEmbed(spotifyId: string | undefined, visible: boolean) {
+    // Hide widget during normal operation.
+    if (!allowSpotifyEmbedWidgetNow()) {
+        hideSpotifyEmbed();
+        return;
+    }
     if (!spotifyId) {
-        if (spotifyIframe) spotifyIframe.style.display = "none";
+        hideSpotifyEmbed();
         return;
     }
     const iframe = ensureSpotifyIframe();
@@ -517,6 +542,7 @@ async function fetchSpotifyAccessTokenFromBackend(opts?: { force?: boolean }): P
         });
         // If token is now available, hide auth panel (if shown)
         showSpotifyAuthPanel(false);
+        hideSpotifyEmbed();
         return token;
     } catch (e) {
         console.warn("overlay: backend spotify token request error", e);
@@ -979,7 +1005,7 @@ function wsConnect() {
                                     pauseAudio();
                                 }
                                 // hide spotify embed when using direct audio
-                                showSpotifyEmbed(undefined, false);
+                                hideSpotifyEmbed();
                             } else if (cur && cur.spotify_id) {
                                 // Prefer Spotify Web Playback SDK / Web API if we can obtain a user token
                                 try {
@@ -991,10 +1017,10 @@ function wsConnect() {
                                             await spotifyPause();
                                         }
                                         // hide iframe fallback
-                                        showSpotifyEmbed(undefined, false);
+                                        hideSpotifyEmbed();
                                     } else {
-                                        // fallback to Spotify embed; autoplay may be blocked by browser
-                                        showSpotifyEmbed(String(cur.spotify_id), !!state.playing);
+                                        // Widget disabled during normal work; keep hidden.
+                                        hideSpotifyEmbed();
                                         if (!state.playing) pauseAudio();
                                     }
                                 } catch (e) {
@@ -1002,12 +1028,12 @@ function wsConnect() {
                                         "overlay: spotify SDK/playback failed, falling back to embed",
                                         e
                                     );
-                                    showSpotifyEmbed(String(cur.spotify_id), !!state.playing);
+                                    hideSpotifyEmbed();
                                 }
                             } else {
                                 // nothing to play; ensure pause
                                 pauseAudio();
-                                showSpotifyEmbed(undefined, false);
+                                hideSpotifyEmbed();
                             }
                         }
                     } catch (e) {
