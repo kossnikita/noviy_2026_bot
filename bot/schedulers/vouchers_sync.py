@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+
+import json
 from aiogram import Bot
 from aiogram.types import BufferedInputFile
 
@@ -23,6 +25,7 @@ async def run_voucher_sync(
     interval_s: float = 10.0,
 ) -> None:
     log = logging.getLogger("bot.vouchers.sync")
+    log.info("Voucher sync started (interval_s=%.2f)", interval_s)
 
     while True:
         try:
@@ -33,6 +36,9 @@ async def run_voucher_sync(
 
             while True:
                 try:
+                    log.debug(
+                        f"Fetching settings page offset={offset} limit={limit}"
+                    )
                     page = api.get_json(
                         f"/settings?limit={limit}&offset={offset}"
                     )
@@ -41,6 +47,9 @@ async def run_voucher_sync(
                     break
 
                 items = page or []
+                log.debug(
+                    f"Fetched {len(items)} settings items at offset={offset}"
+                )
                 if not items:
                     break
 
@@ -54,24 +63,29 @@ async def run_voucher_sync(
                 offset += limit
 
             for key in state_keys:
+                log.info(f"Processing state key: {key}")
                 raw = settings.get(key)
                 st = _decode_state(raw)
+                log.debug(f"Decoded state for {key}: {st}")
                 if not st:
+                    log.debug(f"No state for {key}, skipping")
                     continue
 
                 try:
                     user_id = int(key[len(_VOUCHER_STATE_KEY_PREFIX) :])
                 except Exception:
+                    log.warning(f"Invalid user_id in key: {key}")
                     continue
 
-                # `st` now contains { "codes": [ {code,message_id,use_count}, ... ] }
                 codes = list(st.get("codes") or [])
                 if not codes:
-                    # nothing stored, remove key
+                    log.info(f"No codes for {key}, deleting key")
                     try:
                         api.delete(f"/settings/{key}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning(
+                            f"Failed to delete empty state key {key}: {e}"
+                        )
                     continue
 
                 remaining = []
@@ -81,33 +95,31 @@ async def run_voucher_sync(
                     issued_use_count = int(entry.get("use_count") or 0)
 
                     if not code or msg_id <= 0:
+                        log.debug(f"Invalid code or msg_id in entry: {entry}")
                         continue
 
                     try:
                         v = api.get_json(f"/vouchers/by-code/{code}")
+                        log.debug(f"Voucher by code {code}: {v}")
                     except ApiError:
-                        # voucher disappeared; drop this entry
-                        try:
-                            # attempt to delete persisted state for this user later
-                            pass
-                        except Exception:
-                            pass
+                        log.info(
+                            f"Voucher {code} disappeared, dropping entry for user {user_id}"
+                        )
                         continue
 
                     use_count = int((v or {}).get("use_count") or 0)
                     if use_count > issued_use_count:
+                        log.info(
+                            f"Voucher {code} used (use_count={use_count} > issued={issued_use_count}), deleting message {msg_id} for user {user_id}"
+                        )
                         try:
                             await bot.delete_message(
                                 chat_id=user_id, message_id=msg_id
                             )
-                        except Exception:
-                            pass
-                        # consumed voucher - do not keep this entry
-                        try:
-                            # nothing else to do for this entry
-                            pass
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.warning(
+                                f"Failed to delete message {msg_id} for user {user_id}: {e}"
+                            )
                         continue
 
                     # keep tracking this entry
@@ -116,6 +128,9 @@ async def run_voucher_sync(
                 # Persist remaining entries or delete key if empty
                 try:
                     if remaining:
+                        log.info(
+                            f"Persisting {len(remaining)} codes for {key}"
+                        )
                         settings.set(
                             key,
                             json.dumps(
@@ -125,15 +140,21 @@ async def run_voucher_sync(
                             ),
                         )
                     else:
+                        log.info(f"No remaining codes for {key}, deleting key")
                         api.delete(f"/settings/{key}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(
+                        f"Failed to persist/delete state for {key}: {e}"
+                    )
 
             # 2) Delivery: send voucher DM only when a new voucher is present in API.
             v_offset = 0
             v_limit = 200
             while True:
                 try:
+                    log.debug(
+                        f"Fetching vouchers page offset={v_offset} limit={v_limit}"
+                    )
                     vouchers = api.get_json(
                         f"/vouchers?active_only=1&limit={v_limit}&offset={v_offset}"
                     )
@@ -142,6 +163,9 @@ async def run_voucher_sync(
                     break
 
                 items = vouchers or []
+                log.debug(
+                    f"Fetched {len(items)} vouchers at offset={v_offset}"
+                )
                 if not items:
                     break
 
@@ -149,16 +173,19 @@ async def run_voucher_sync(
                     try:
                         user_id = int((v or {}).get("user_id"))
                     except Exception:
+                        log.warning(f"Invalid user_id in voucher: {v}")
                         continue
 
                     code = str((v or {}).get("code") or "").strip()
                     if not code:
+                        log.warning(f"Voucher missing code: {v}")
                         continue
 
                     use_count = int((v or {}).get("use_count") or 0)
 
                     state_key = f"{_VOUCHER_STATE_KEY_PREFIX}{user_id}"
                     prev = _decode_state(settings.get(state_key))
+                    log.debug(f"Decoded prev state for {state_key}: {prev}")
                     prev_codes = set()
                     if prev and isinstance(prev.get("codes"), list):
                         for e in prev.get("codes"):
@@ -171,22 +198,28 @@ async def run_voucher_sync(
 
                     # "New voucher appeared" = code not previously sent to this user.
                     if code in prev_codes:
+                        log.info(
+                            f"Voucher {code} already sent to user {user_id}, skipping"
+                        )
                         continue
 
+                    log.info(f"Sending new voucher {code} to user {user_id}")
                     png = _make_qr_png_bytes(code)
-                    photo = BufferedInputFile(png, filename=f"voucher_{code}.png")
+                    photo = BufferedInputFile(
+                        png, filename=f"voucher_{code}.png"
+                    )
                     try:
                         sent = await bot.send_photo(
                             chat_id=user_id,
                             photo=photo,
                             caption=f"Ваш ваучер: <b>{code}</b>",
                         )
-                    except Exception as e:
-                        # User might not have started the bot / blocked DMs.
                         log.info(
-                            "Failed to DM voucher: user_id=%s err=%s",
-                            user_id,
-                            e,
+                            f"Sent voucher {code} to user {user_id} (message_id={sent.message_id})"
+                        )
+                    except Exception as e:
+                        log.info(
+                            f"Failed to DM voucher: user_id={user_id} code={code} err={e}"
                         )
                         continue
 
@@ -209,16 +242,21 @@ async def run_voucher_sync(
                                 separators=(",", ":"),
                             ),
                         )
+                        log.info(
+                            f"Persisted new voucher {code} for user {user_id} in state"
+                        )
                     except Exception as e:
                         log.warning(
-                            "Failed to persist voucher state: user_id=%s err=%s",
-                            user_id,
-                            e,
+                            f"Failed to persist voucher state: user_id={user_id} code={code} err={e}"
                         )
 
                 if len(items) < v_limit:
+                    log.debug(
+                        f"No more vouchers to fetch (got {len(items)} < {v_limit}), breaking loop"
+                    )
                     break
                 v_offset += v_limit
+                log.debug(f"Advancing voucher offset to {v_offset}")
 
         except Exception:
             log.exception("Voucher sync loop crashed")
