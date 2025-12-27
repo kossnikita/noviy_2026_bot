@@ -20,6 +20,7 @@ import {
 declare global {
     interface Window {
         __NOVIY_OVERLAY__?: Partial<OverlayConfig>;
+        onSpotifyWebPlaybackSDKReady?: () => void;
     }
 }
 
@@ -285,30 +286,83 @@ function showSpotifyEmbed(spotifyId: string | undefined, visible: boolean) {
 let spotifyPlayer: any = null;
 let spotifyDeviceId: string | null = null;
 let spotifySdkLoaded = false;
+let spotifySdkPromise: Promise<void> | null = null;
 
 let spotifyAccessToken: string | null = null;
 let spotifyAccessTokenExpiresAt: number = 0;
 let spotifyTokenLastAttemptAt = 0;
 
+let spotifyPlaybackDisabledReason: string | null = null;
+
 function loadSpotifySdk(): Promise<void> {
-    if ((window as any).Spotify) {
+    if (spotifySdkLoaded || (window as any).Spotify) {
         spotifySdkLoaded = true;
         return Promise.resolve();
     }
-    return new Promise((resolve, reject) => {
+    if (spotifySdkPromise) return spotifySdkPromise;
+
+    spotifySdkPromise = new Promise((resolve, reject) => {
+        let done = false;
+        const finish = (ok: boolean, err?: any) => {
+            if (done) return;
+            done = true;
+            if (ok) {
+                spotifySdkLoaded = true;
+                resolve();
+            } else {
+                reject(err || new Error("Spotify SDK failed to load"));
+            }
+        };
+
+        // The Spotify Web Playback SDK expects this global callback to exist.
+        window.onSpotifyWebPlaybackSDKReady = () => {
+            // SDK script loaded and window.Spotify should be available.
+            if ((window as any).Spotify) finish(true);
+            else finish(false, new Error("Spotify SDK ready callback fired but window.Spotify is missing"));
+        };
+
+        const existing = document.querySelector('script[src="https://sdk.scdn.co/spotify-player.js"]') as HTMLScriptElement | null;
+        if (existing) {
+            // If script is already present, wait for callback / availability.
+            const t = window.setTimeout(() => {
+                if ((window as any).Spotify) finish(true);
+                else finish(false, new Error("Spotify SDK load timeout"));
+            }, 10000);
+            existing.addEventListener("error", (e) => {
+                window.clearTimeout(t);
+                finish(false, e);
+            });
+            return;
+        }
+
         const s = document.createElement("script");
         s.src = "https://sdk.scdn.co/spotify-player.js";
         s.async = true;
-        s.onload = () => {
-            spotifySdkLoaded = true;
-            resolve();
+        const t = window.setTimeout(() => {
+            if ((window as any).Spotify) finish(true);
+            else finish(false, new Error("Spotify SDK load timeout"));
+        }, 10000);
+
+        s.onerror = (e) => {
+            window.clearTimeout(t);
+            finish(false, e);
         };
-        s.onerror = (e) => reject(e);
+
+        // Note: do not resolve on onload; the SDK signals readiness via window.onSpotifyWebPlaybackSDKReady.
         document.head.appendChild(s);
+    }).finally(() => {
+        // allow retries if something went wrong
+        if (!spotifySdkLoaded) spotifySdkPromise = null;
     });
+
+    return spotifySdkPromise;
 }
 
 async function initSpotifyPlayerIfNeeded() {
+    if (spotifyPlaybackDisabledReason) {
+        console.warn("overlay: spotify playback disabled", spotifyPlaybackDisabledReason);
+        return false;
+    }
     const token = await getSpotifyAccessToken();
     if (!token) return false;
     if (spotifyPlayer && spotifyDeviceId) return true;
@@ -321,6 +375,23 @@ async function initSpotifyPlayerIfNeeded() {
 
     return new Promise<boolean>((resolve) => {
         try {
+            let done = false;
+            const timeout = window.setTimeout(() => {
+                if (done) return;
+                done = true;
+                console.warn("overlay: spotify player init timeout");
+                setStatus("spotify: init timeout");
+                resolve(false);
+            }, 12000);
+
+            const finish = (ok: boolean, reason?: string) => {
+                if (done) return;
+                done = true;
+                window.clearTimeout(timeout);
+                if (!ok && reason) spotifyPlaybackDisabledReason = reason;
+                resolve(ok);
+            };
+
             spotifyPlayer = new (window as any).Spotify.Player({
                 name: "Noviy Overlay",
                 getOAuthToken: (cb: (t: string) => void) => {
@@ -335,7 +406,7 @@ async function initSpotifyPlayerIfNeeded() {
                 spotifyDeviceId = device_id;
                 console.log("overlay: spotify player ready", device_id);
                 setStatus("spotify: ready");
-                resolve(true);
+                finish(true);
             });
 
             spotifyPlayer.addListener("not_ready", ({ device_id }: any) => {
@@ -343,9 +414,22 @@ async function initSpotifyPlayerIfNeeded() {
                 setStatus("spotify: not ready");
             });
 
-            spotifyPlayer.addListener("initialization_error", (e: any) => console.error("overlay: spotify init error", e));
-            spotifyPlayer.addListener("authentication_error", (e: any) => console.error("overlay: spotify auth error", e));
-            spotifyPlayer.addListener("account_error", (e: any) => console.error("overlay: spotify account error", e));
+            spotifyPlayer.addListener("initialization_error", (e: any) => {
+                console.error("overlay: spotify init error", e);
+                setStatus("spotify: init error");
+                finish(false, "initialization_error");
+            });
+            spotifyPlayer.addListener("authentication_error", (e: any) => {
+                console.error("overlay: spotify auth error", e);
+                setStatus("spotify: auth error");
+                finish(false, "authentication_error");
+            });
+            spotifyPlayer.addListener("account_error", (e: any) => {
+                console.error("overlay: spotify account error", e);
+                setStatus("spotify: account error");
+                // Common reason is non-Premium account; disable to avoid repeated attempts.
+                finish(false, "account_error");
+            });
 
             spotifyPlayer.connect().then((connected: boolean) => {
                 console.log("overlay: spotify connect result", connected);
