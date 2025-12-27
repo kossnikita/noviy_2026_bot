@@ -25,11 +25,11 @@ Database/models are hosted by the FastAPI service (package `api/`). The bot talk
     - `BOT_TOKEN` – Telegram bot token
     - `ADMIN_ID` – numeric Telegram user ID of the admin
     - `DB_PATH` – path to SQLite DB (default: database.sqlite3)
-    - `API_TOKEN` – shared API access token (used by bot and external apps)
+    - `BOT_API_TOKEN` – shared API access token (used by bot and external apps)
 
     API requests must include a token:
-    - `Authorization: Bearer <API_TOKEN>` (recommended)
-    - or `X-API-Token: <API_TOKEN>`
+    - `Authorization: Bearer <BOT_API_TOKEN>` (recommended)
+    - or `X-API-Token: <BOT_API_TOKEN>`
 
 2) Run bot + API together:
 

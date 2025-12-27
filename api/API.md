@@ -19,12 +19,12 @@
 Без токена доступ запрещён (`401`).
 
 Передавайте токен одним из способов:
-- `Authorization: Bearer <API_TOKEN>` (рекомендуется)
-- `X-API-Token: <API_TOKEN>`
+- `Authorization: Bearer <BOT_API_TOKEN>` (рекомендуется)
+- `X-API-Token: <BOT_API_TOKEN>`
 
 Для WebSocket `/ws/player` токен можно передать:
-- заголовком `Authorization: Bearer <API_TOKEN>` или `X-API-Token: <API_TOKEN>`
-- или query параметром `?token=<API_TOKEN>`
+- заголовком `Authorization: Bearer <BOT_API_TOKEN>` или `X-API-Token: <BOT_API_TOKEN>`
+- или query параметром `?token=<BOT_API_TOKEN>`
 
 ### Пагинация
 

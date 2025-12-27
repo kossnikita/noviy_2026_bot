@@ -23,7 +23,7 @@ def load_config() -> Config:
     api_base_url = (os.getenv("API_BASE_URL") or "").strip()
     if not api_base_url:
         api_base_url = "http://127.0.0.1:8080"
-    api_token = (os.getenv("API_TOKEN") or "").strip()
+    api_token = (os.getenv("BOT_API_TOKEN") or "").strip()
 
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in environment")

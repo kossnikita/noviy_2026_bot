@@ -501,7 +501,7 @@ class Plugin:
                     await cb.message.answer(
                         "Готово! Трек добавлен в общий список."
                         + (
-                            f"У вас осталось {max_tracks - current_count} из {max_tracks} треков."
+                            f" У вас осталось {max_tracks - current_count} из {max_tracks} треков."
                             " Добавить ещё трек: /track"
                             if max_tracks != 0 and current_count < max_tracks
                             else ""

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Noviy Overlay</title>
+    <style>
+        /*__CSS__*/
+    </style>
+</head>
+
+<body>
+    <div id="root" class="root">
+        <div id="landscapeOnly" class="landscapeOnly" aria-hidden="true">
+            <div class="landscapeOnly__box">Только альбомный режим</div>
+        </div>
+
+        <div class="stage">
+            <div class="bg" id="bg"></div>
+
+            <div class="photo layer layer--photo isHidden" id="photoLayer">
+                <img class="photo__img" id="photoImg" alt="photo" />
+                <div class="photo__caption" id="photoCaption"></div>
+            </div>
+
+            <div class="track layer layer--track" id="trackLayer">
+                <div class="cover" id="cover">
+                    <img class="cover__img" id="coverImg" alt="cover" />
+                </div>
+                <div class="meta">
+                    <div class="meta__title" id="title">Idle</div>
+                    <div class="meta__artists" id="artists"></div>
+                    <div class="meta__album" id="album"></div>
+                    <div class="meta__by" id="requestedBy"></div>
+                </div>
+            </div>
+
+            <div class="hud" id="hud">
+                <div class="hud__line" id="status"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Runtime configuration.
+        // The container entrypoint should generate /overlay/config.js from env at startup.
+        window.__NOVIY_OVERLAY__ = window.__NOVIY_OVERLAY__ || {};
+    </script>
+    <script src="config.js"></script>
+
+    <script>
+        /*__JS__*/
+    </script>
+</body>
+
+</html>

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import hashlib
 import logging
+import random
 import os
 import time
 from contextlib import asynccontextmanager
@@ -32,6 +33,7 @@ from api.db import Db, init_db
 from api.db_sa import ApiToken, Blacklist, Chat, Setting, SpotifyTrack, User
 
 from api.photos import router as photos_router
+from api.spotify_oauth import router as spotify_oauth_router
 from api.slot import router as prizes_router
 from api.vouchers import router as vouchers_router
 
@@ -102,6 +104,13 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     # In Compose, env_file/environment already populate os.environ; load_dotenv is harmless.
     load_dotenv(override=False)
 
+    def _env(name: str, default: str | None = None) -> str | None:
+        v = os.environ.get(name)
+        if v is None:
+            return default
+        v = v.strip()
+        return v if v else default
+
     def _ensure_logging_configured() -> None:
         root = logging.getLogger()
         if root.handlers:
@@ -114,12 +123,13 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     _ensure_logging_configured()
     logger = logging.getLogger("api")
 
-    max_tracks_raw = (os.getenv("MAX_TRACKS_PER_USER") or "5").strip()
+    max_tracks_raw = (_env("MAX_TRACKS_PER_USER", "5") or "5").strip()
     try:
         max_tracks_per_user = int(max_tracks_raw)
-        if max_tracks_per_user <= 0:
+        if max_tracks_per_user < 0:
             max_tracks_per_user = 5
     except Exception:
+        logger.error("Invalid MAX_TRACKS_PER_USER value: %r", max_tracks_raw)
         max_tracks_per_user = 5
 
     _DEFAULT_SETTINGS: dict[str, str] = {
@@ -144,13 +154,67 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     def _hash_token(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+    def _extract_env_token() -> str | None:
+        raw = (_env("BOT_API_TOKEN", "") or "").strip()
+        if not raw:
+            return None
+        if raw.lower().startswith("bearer "):
+            raw = raw[7:].strip()
+        return raw if raw else None
+
+    def _ensure_env_api_token(s: Session) -> None:
+        token = _extract_env_token()
+        if not token:
+            return
+
+        token_hash = _hash_token(token)
+        exists = s.scalar(select(ApiToken.id).where(ApiToken.token_hash == token_hash)) is not None
+        if exists:
+            logger.info(
+                "BOT_API_TOKEN from env already exists in DB (token_hash_prefix=%s)",
+                token_hash[:8],
+            )
+            return
+
+        s.add(ApiToken(token_hash=token_hash, label="env:BOT_API_TOKEN"))
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            logger.info(
+                "BOT_API_TOKEN from env already exists in DB (race) (token_hash_prefix=%s)",
+                token_hash[:8],
+            )
+        else:
+            logger.info(
+                "Added BOT_API_TOKEN from env to DB (token_hash_prefix=%s)",
+                token_hash[:8],
+            )
+
     def _extract_http_token(request: Request) -> str | None:
         auth = (request.headers.get("authorization") or "").strip()
         if auth.lower().startswith("bearer "):
             v = auth[7:].strip()
             return v if v else None
         x = (request.headers.get("x-api-token") or "").strip()
-        return x if x else None
+        if x:
+            return x
+
+        # Allow token in query string for browser-driven flows where setting headers is
+        # inconvenient.
+        # Limit this to Spotify OAuth helper endpoints only.
+        p = request.url.path
+        if p in {"/spotify/login", "/spotify/token", "/api/spotify/login", "/api/spotify/token"}:
+            q = (
+                request.query_params.get("token")
+                or request.query_params.get("api_token")
+                or ""
+            ).strip()
+            if q.lower().startswith("bearer "):
+                q = q[7:].strip()
+            return q if q else None
+
+        return None
 
     def _check_http_token(request: Request) -> tuple[bool, str | None]:
         token = _extract_http_token(request)
@@ -171,8 +235,8 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         logger.info("API starting")
         if db is None:
-            database_url = (os.getenv("DATABASE_URL") or "").strip()
-            db_path = (os.getenv("DB_PATH") or "database.sqlite3").strip()
+            database_url = (_env("DATABASE_URL", "") or "").strip()
+            db_path = (_env("DB_PATH", "database.sqlite3") or "database.sqlite3").strip()
             app.state.db = init_db(database_url=database_url, db_path=db_path)
             logger.info("DB initialized for API (db_path=%s)", db_path)
         else:
@@ -182,6 +246,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         try:
             with app.state.db.session() as s:
                 _ensure_default_settings(s)
+                _ensure_env_api_token(s)
         except Exception:
             logger.exception("Failed to ensure default settings")
         yield
@@ -193,6 +258,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
     app.include_router(prizes_router)
     app.include_router(vouchers_router)
     app.include_router(photos_router)
+    app.include_router(spotify_oauth_router)
 
     if db is not None:
         app.state.db = db
@@ -207,6 +273,10 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         # Healthcheck should work without a token.
         # Keep both variants for safety (direct uvicorn hits vs nginx-stripped paths).
         if request.url.path in {"/health", "/api/health"}:
+            return await call_next(request)
+
+        # Spotify OAuth callback is invoked by Spotify and cannot include our API token.
+        if request.url.path in {"/spotify/callback", "/api/spotify/callback"}:
             return await call_next(request)
 
         ok, err = _check_http_token(request)
@@ -385,6 +455,60 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             async with ctrl.lock:
                 ctrl.clients.discard(ws)
             logger.info("WS /ws/player disconnected")
+
+    # ---- Player control endpoints (admin via API token) ----
+
+    @app.post("/player/play")
+    async def player_play(request: Request) -> dict:
+        ctrl: _PlayerController = app.state.player
+        async with ctrl.lock:
+            ctrl.playing = True
+            if ctrl.index is None and ctrl.playlist:
+                ctrl.index = 0
+            await _broadcast_player_state(ctrl)
+            return _player_state_payload(ctrl)
+
+    @app.post("/player/pause")
+    async def player_pause(request: Request) -> dict:
+        ctrl: _PlayerController = app.state.player
+        async with ctrl.lock:
+            ctrl.playing = False
+            await _broadcast_player_state(ctrl)
+            return _player_state_payload(ctrl)
+
+    @app.post("/player/shuffle")
+    async def player_shuffle(request: Request) -> dict:
+        ctrl: _PlayerController = app.state.player
+        async with ctrl.lock:
+            if ctrl.playlist:
+                random.shuffle(ctrl.playlist)
+                ctrl.index = 0 if ctrl.playlist else None
+            await _broadcast_player_state(ctrl)
+            return _player_state_payload(ctrl)
+
+    @app.post("/player/prev")
+    async def player_prev(request: Request) -> dict:
+        ctrl: _PlayerController = app.state.player
+        async with ctrl.lock:
+            if ctrl.playlist:
+                if ctrl.index is None:
+                    ctrl.index = 0
+                else:
+                    ctrl.index = (ctrl.index - 1) % len(ctrl.playlist)
+            await _broadcast_player_state(ctrl)
+            return _player_state_payload(ctrl)
+
+    @app.post("/player/next")
+    async def player_next(request: Request) -> dict:
+        ctrl: _PlayerController = app.state.player
+        async with ctrl.lock:
+            if ctrl.playlist:
+                if ctrl.index is None:
+                    ctrl.index = 0
+                else:
+                    ctrl.index = (ctrl.index + 1) % len(ctrl.playlist)
+            await _broadcast_player_state(ctrl)
+            return _player_state_payload(ctrl)
 
     @contextmanager
     def _session() -> Generator[Session, None, None]:

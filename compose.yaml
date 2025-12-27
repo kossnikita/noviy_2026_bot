@@ -7,31 +7,41 @@ services:
       POSTGRES_PASSWORD: noviy_password
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noviy -d noviy_2026"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
-      context: .
-      dockerfile: api/Dockerfile
+      context: ./api
+      dockerfile: Dockerfile
     depends_on:
       - postgres
     env_file:
       - .env
     environment:
-      # Use Postgres instead of SQLite
       DATABASE_URL: postgresql+psycopg://noviy:noviy_password@postgres:5432/noviy_2026
     ports:
       - "8080:80"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   bot:
     build:
-      context: .
-      dockerfile: bot/Dockerfile
+      context: ./bot
+      dockerfile: Dockerfile
     depends_on:
       - api
     env_file:
       - .env
     environment:
-      # Bot talks directly to uvicorn inside api container
       API_BASE_URL: http://api:8080
 
 volumes:

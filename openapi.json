@@ -651,6 +651,47 @@
         }
       }
     },
+    "/photos/upload": {
+      "post": {
+        "tags": [
+          "photos"
+        ],
+        "summary": "Upload Photo",
+        "operationId": "upload_photo_photos_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_photo_photos_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/photos": {
       "post": {
         "tags": [
@@ -798,6 +839,227 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spotify/login": {
+      "get": {
+        "tags": [
+          "spotify-auth"
+        ],
+        "summary": "Spotify Login",
+        "operationId": "spotify_login_spotify_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spotify/callback": {
+      "get": {
+        "tags": [
+          "spotify-auth"
+        ],
+        "summary": "Spotify Callback",
+        "operationId": "spotify_callback_spotify_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spotify/token": {
+      "get": {
+        "tags": [
+          "spotify-auth"
+        ],
+        "summary": "Spotify Token",
+        "operationId": "spotify_token_spotify_token_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Spotify Token Spotify Token Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/player/play": {
+      "post": {
+        "summary": "Player Play",
+        "operationId": "player_play_player_play_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Player Play Player Play Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/player/pause": {
+      "post": {
+        "summary": "Player Pause",
+        "operationId": "player_pause_player_pause_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Player Pause Player Pause Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/player/shuffle": {
+      "post": {
+        "summary": "Player Shuffle",
+        "operationId": "player_shuffle_player_shuffle_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Player Shuffle Player Shuffle Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/player/prev": {
+      "post": {
+        "summary": "Player Prev",
+        "operationId": "player_prev_player_prev_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Player Prev Player Prev Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/player/next": {
+      "post": {
+        "summary": "Player Next",
+        "operationId": "player_next_player_next_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Player Next Player Next Post"
                 }
               }
             }
@@ -2175,6 +2437,25 @@
         },
         "type": "object",
         "title": "BlacklistUpdate"
+      },
+      "Body_upload_photo_photos_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          },
+          "added_by": {
+            "type": "integer",
+            "title": "Added By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "added_by"
+        ],
+        "title": "Body_upload_photo_photos_upload_post"
       },
       "ChatCreate": {
         "properties": {

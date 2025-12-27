@@ -19,3 +19,10 @@ data
 logs
 tests
 scripts
+
+# Keep overlay sources, ignore only build artifacts
+!overlay/**
+overlay/node_modules
+overlay/dist
+overlay/.env
+overlay/.env.local

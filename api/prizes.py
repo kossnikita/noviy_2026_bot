@@ -13,7 +13,7 @@ from api.schemas import (
     PrizeWinsCreate,
 )
 
-router = APIRouter(prefix="/slot", tags=["slot"])
+router = APIRouter(prefix="/slot/prize", tags=["slot"])
 
 
 def _normalize_prize_name(name: str) -> str:
