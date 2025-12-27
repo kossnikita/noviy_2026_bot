@@ -143,6 +143,107 @@ function ensureSpotifyIframe() {
     }
 }
 
+// --- Spotify authorization UI (when backend says "Spotify is not connected") ---
+const spotifyAuthPanel = (() => {
+    try {
+        const wrap = document.createElement("div");
+        wrap.id = "noviy-spotify-auth";
+        wrap.style.position = "fixed";
+        wrap.style.right = "16px";
+        wrap.style.bottom = "64px";
+        wrap.style.zIndex = "9999";
+        wrap.style.maxWidth = "360px";
+        wrap.style.padding = "10px 12px";
+        wrap.style.borderRadius = "10px";
+        wrap.style.background = "rgba(0,0,0,0.6)";
+        wrap.style.color = "white";
+        wrap.style.fontSize = "14px";
+        wrap.style.display = "none";
+
+        const msg = document.createElement("div");
+        msg.id = "noviy-spotify-auth-msg";
+        msg.textContent = "Spotify is not connected.";
+        msg.style.marginBottom = "8px";
+        wrap.appendChild(msg);
+
+        const btn = document.createElement("button");
+        btn.id = "noviy-spotify-auth-button";
+        btn.textContent = "Authorize Spotify";
+        btn.style.padding = "10px 14px";
+        btn.style.borderRadius = "8px";
+        btn.style.background = "rgba(255,255,255,0.12)";
+        btn.style.color = "white";
+        btn.style.border = "1px solid rgba(255,255,255,0.18)";
+        btn.style.cursor = "pointer";
+        wrap.appendChild(btn);
+
+        document.body.appendChild(wrap);
+        return { wrap, msg, btn };
+    } catch (e) {
+        console.warn("overlay: failed to create spotify auth panel", e);
+        return null as unknown as { wrap: HTMLDivElement; msg: HTMLDivElement; btn: HTMLButtonElement };
+    }
+})();
+
+let spotifyAuthPollTimer: number | null = null;
+
+function showSpotifyAuthPanel(visible: boolean, message?: string) {
+    if (!spotifyAuthPanel) return;
+    if (message) spotifyAuthPanel.msg.textContent = message;
+    spotifyAuthPanel.wrap.style.display = visible ? "block" : "none";
+    if (!visible && spotifyAuthPollTimer) {
+        window.clearInterval(spotifyAuthPollTimer);
+        spotifyAuthPollTimer = null;
+    }
+}
+
+function spotifyLoginUrl(): string | null {
+    const t = (cfg.OVERLAY_API_TOKEN || "").trim();
+    if (!t) return null;
+    // Use query token because browser navigation can't set Authorization headers.
+    const u = new URL(apiUrl("spotify/login"), window.location.origin);
+    u.searchParams.set("token", t);
+    return u.toString();
+}
+
+async function spotifyAuthPollUntilConnected() {
+    if (spotifyAuthPollTimer) return;
+    spotifyAuthPollTimer = window.setInterval(() => {
+        void fetchSpotifyAccessTokenFromBackend({ force: true })
+            .then((t) => {
+                if (t) {
+                    showSpotifyAuthPanel(false);
+                    setStatus("spotify: connected");
+                }
+            })
+            .catch(() => {
+                // keep polling; errors are expected until user finishes OAuth
+            });
+    }, 3000);
+}
+
+if (spotifyAuthPanel) {
+    spotifyAuthPanel.btn.addEventListener("click", () => {
+        const u = spotifyLoginUrl();
+        if (!u) {
+            showSpotifyAuthPanel(true, "Missing OVERLAY_API_TOKEN. Set it in overlay config.");
+            return;
+        }
+
+        // Use noopener/noreferrer to avoid leaking token via referrer.
+        try {
+            window.open(u, "_blank", "noopener,noreferrer");
+        } catch {
+            // Fallback: same-tab navigation.
+            window.location.href = u;
+            return;
+        }
+
+        showSpotifyAuthPanel(true, "Complete Spotify login in the opened tab, then return here.");
+        void spotifyAuthPollUntilConnected();
+    });
+}
+
 async function playAudioSrc(src: string) {
     if (!audioEl) return;
     try {
@@ -282,10 +383,10 @@ function _overlayAuthHeader(): string | null {
     return raw.includes(" ") ? raw : `Bearer ${raw}`;
 }
 
-async function fetchSpotifyAccessTokenFromBackend(): Promise<string | null> {
+async function fetchSpotifyAccessTokenFromBackend(opts?: { force?: boolean }): Promise<string | null> {
     // Avoid hammering the backend in case it's not configured.
     const now = Date.now();
-    if (now - spotifyTokenLastAttemptAt < 60_000) return spotifyAccessToken;
+    if (!opts?.force && now - spotifyTokenLastAttemptAt < 60_000) return spotifyAccessToken;
     spotifyTokenLastAttemptAt = now;
 
     const auth = _overlayAuthHeader();
@@ -302,6 +403,19 @@ async function fetchSpotifyAccessTokenFromBackend(): Promise<string | null> {
         });
         if (!r.ok) {
             const text = await r.text();
+            if (r.status === 409) {
+                // This is the "not connected" state; prompt user to authorize.
+                let detail = "Spotify is not connected. Open /spotify/login to authorize.";
+                try {
+                    const j = JSON.parse(text);
+                    if (j && typeof j.detail === "string") detail = j.detail;
+                } catch {
+                    // ignore parse errors
+                }
+                showSpotifyAuthPanel(true, detail);
+            } else if (r.status === 401 || r.status === 403) {
+                showSpotifyAuthPanel(true, "Spotify auth requires a valid OVERLAY_API_TOKEN.");
+            }
             console.warn("overlay: backend spotify token fetch failed", r.status, text);
             return null;
         }
@@ -317,6 +431,8 @@ async function fetchSpotifyAccessTokenFromBackend(): Promise<string | null> {
         console.log("overlay: spotify token obtained from backend", {
             expires_at: exp || null,
         });
+        // If token is now available, hide auth panel (if shown)
+        showSpotifyAuthPanel(false);
         return token;
     } catch (e) {
         console.warn("overlay: backend spotify token request error", e);
