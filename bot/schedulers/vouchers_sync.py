@@ -59,40 +59,75 @@ async def run_voucher_sync(
                 if not st:
                     continue
 
-                code = str(st.get("code") or "").strip()
-                msg_id = int(st.get("message_id") or 0)
-                issued_use_count = int(st.get("use_count") or 0)
-
-                if not code or msg_id <= 0:
-                    continue
-
                 try:
                     user_id = int(key[len(_VOUCHER_STATE_KEY_PREFIX) :])
                 except Exception:
                     continue
 
-                try:
-                    v = api.get_json(f"/vouchers/by-code/{code}")
-                except ApiError:
-                    # If voucher disappeared, just drop the state.
+                # `st` now contains { "codes": [ {code,message_id,use_count}, ... ] }
+                codes = list(st.get("codes") or [])
+                if not codes:
+                    # nothing stored, remove key
                     try:
                         api.delete(f"/settings/{key}")
                     except Exception:
                         pass
                     continue
 
-                use_count = int((v or {}).get("use_count") or 0)
-                if use_count > issued_use_count:
+                remaining = []
+                for entry in codes:
+                    code = str(entry.get("code") or "").strip()
+                    msg_id = int(entry.get("message_id") or 0)
+                    issued_use_count = int(entry.get("use_count") or 0)
+
+                    if not code or msg_id <= 0:
+                        continue
+
                     try:
-                        await bot.delete_message(
-                            chat_id=user_id, message_id=msg_id
+                        v = api.get_json(f"/vouchers/by-code/{code}")
+                    except ApiError:
+                        # voucher disappeared; drop this entry
+                        try:
+                            # attempt to delete persisted state for this user later
+                            pass
+                        except Exception:
+                            pass
+                        continue
+
+                    use_count = int((v or {}).get("use_count") or 0)
+                    if use_count > issued_use_count:
+                        try:
+                            await bot.delete_message(
+                                chat_id=user_id, message_id=msg_id
+                            )
+                        except Exception:
+                            pass
+                        # consumed voucher - do not keep this entry
+                        try:
+                            # nothing else to do for this entry
+                            pass
+                        except Exception:
+                            pass
+                        continue
+
+                    # keep tracking this entry
+                    remaining.append(entry)
+
+                # Persist remaining entries or delete key if empty
+                try:
+                    if remaining:
+                        settings.set(
+                            key,
+                            json.dumps(
+                                {"codes": remaining},
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
                         )
-                    except Exception:
-                        pass
-                    try:
+                    else:
                         api.delete(f"/settings/{key}")
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
 
             # 2) Delivery: send voucher DM only when a new voucher is present in API.
             v_offset = 0
@@ -124,17 +159,21 @@ async def run_voucher_sync(
 
                     state_key = f"{_VOUCHER_STATE_KEY_PREFIX}{user_id}"
                     prev = _decode_state(settings.get(state_key))
-                    prev_code = (
-                        str((prev or {}).get("code") or "").strip()
-                        if prev
-                        else ""
-                    )
+                    prev_codes = set()
+                    if prev and isinstance(prev.get("codes"), list):
+                        for e in prev.get("codes"):
+                            try:
+                                prev_codes.add(
+                                    str((e or {}).get("code") or "").strip()
+                                )
+                            except Exception:
+                                continue
 
-                    # "New voucher appeared" = no state for user, or code has changed.
-                    if prev_code == code:
-                        continue
+                        # "New voucher appeared" = code not previously sent to this user.
+                        if code in prev_codes:
+                            continue
 
-                    png = _make_qr_png_bytes(code)
+                        png = _make_qr_png_bytes(code)
                     photo = BufferedInputFile(
                         png, filename=f"voucher_{code}.png"
                     )
@@ -154,12 +193,22 @@ async def run_voucher_sync(
                         continue
 
                     try:
+                        # Merge new entry into existing state.codes
+                        new_entry = {
+                            "code": code,
+                            "message_id": int(sent.message_id),
+                            "use_count": use_count,
+                        }
+                        merged = {"codes": []}
+                        if prev and isinstance(prev.get("codes"), list):
+                            merged["codes"].extend(prev.get("codes"))
+                        merged["codes"].append(new_entry)
                         settings.set(
                             state_key,
-                            _encode_state(
-                                code=code,
-                                message_id=int(sent.message_id),
-                                use_count=use_count,
+                            json.dumps(
+                                merged,
+                                ensure_ascii=False,
+                                separators=(",", ":"),
                             ),
                         )
                     except Exception as e:
