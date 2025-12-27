@@ -105,6 +105,7 @@ def _scopes() -> str:
     return " ".join(
         [
             "streaming",
+            "user-read-email",
             "user-read-playback-state",
             "user-modify-playback-state",
             "user-read-currently-playing",
@@ -267,3 +268,20 @@ def spotify_token() -> dict[str, Any]:
         "access_token": store.access_token,
         "expires_at": int(store.expires_at),
     }
+
+
+@router.post("/spotify/reset")
+def spotify_reset() -> dict[str, Any]:
+    path = _store_path()
+    existed = path.exists()
+    try:
+        path.unlink(missing_ok=True)
+    except TypeError:
+        # Python < 3.8 compatibility (missing_ok not available)
+        try:
+            if path.exists():
+                path.unlink()
+        except FileNotFoundError:
+            pass
+
+    return {"ok": True, "deleted": existed, "path": str(path)}

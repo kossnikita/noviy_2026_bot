@@ -967,6 +967,29 @@
         }
       }
     },
+    "/spotify/reset": {
+      "post": {
+        "tags": [
+          "spotify-auth"
+        ],
+        "summary": "Spotify Reset",
+        "operationId": "spotify_reset_spotify_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Spotify Reset Spotify Reset Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/player/play": {
       "post": {
         "summary": "Player Play",

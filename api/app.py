@@ -204,7 +204,14 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         # inconvenient.
         # Limit this to Spotify OAuth helper endpoints only.
         p = request.url.path
-        if p in {"/spotify/login", "/spotify/token", "/api/spotify/login", "/api/spotify/token"}:
+        if p in {
+            "/spotify/login",
+            "/spotify/token",
+            "/spotify/reset",
+            "/api/spotify/login",
+            "/api/spotify/token",
+            "/api/spotify/reset",
+        }:
             q = (
                 request.query_params.get("token")
                 or request.query_params.get("api_token")
