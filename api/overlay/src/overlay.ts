@@ -242,30 +242,21 @@ async function tryPlayPendingPlayback() {
     }
 }
 
-if (playButton) {
-    playButton.addEventListener("click", () => {
-        console.log("overlay: play button clicked, activating audio");
+// Auto-activate audio (works in OBS Browser Source without user gesture)
+// For regular browsers, this may not work due to autoplay policy
+function autoActivateAudio() {
+    if (!audioActivated) {
+        console.log("overlay: auto-activating audio");
         activateSpotifyElement();
         audioActivated = true;
-        try {
-            sessionStorage.setItem("noviy_audio_activated", "1");
-        } catch (e) { /* ignore */ }
-        showPlayButton(false);
-        void tryPlayPendingPlayback();
-    });
-}
-
-// Check if audio was previously activated in this session
-try {
-    if (sessionStorage.getItem("noviy_audio_activated") === "1") {
-        audioActivated = true;
     }
-} catch (e) { /* ignore */ }
-
-// Show Enable Audio button if not yet activated
-if (!audioActivated) {
-    showPlayButton(true, "🔊 Enable Audio");
 }
+
+// Try to auto-activate immediately and on any user interaction
+autoActivateAudio();
+document.addEventListener("click", autoActivateAudio, { once: true });
+document.addEventListener("keydown", autoActivateAudio, { once: true });
+document.addEventListener("touchstart", autoActivateAudio, { once: true });
 
 setupSpotifyAuthButton(cfg, apiUrl, fetchSpotifyAccessTokenFromBackend, showSpotifyAuthPanel, setStatus);
 

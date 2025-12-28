@@ -45,6 +45,12 @@ export function activateSpotifyElement(): boolean {
                         .then((s: any) => console.log("spotify_sdk: current state after activateElement", s ? { paused: s.paused, position: s.position } : null))
                         .catch(() => undefined);
                 }
+                // Resume playback to ensure audio goes through this device
+                if (typeof spotifyPlayer.resume === "function") {
+                    Promise.resolve(spotifyPlayer.resume())
+                        .then(() => console.log("spotify_sdk: resume() called after activateElement"))
+                        .catch((e: any) => console.warn("spotify_sdk: resume after activateElement failed", e));
+                }
             } catch (e) {
                 // ignore
             }
@@ -162,15 +168,24 @@ export async function initSpotifyPlayerIfNeeded(cfg: OverlayConfig, getSpotifyAc
                 spotifyDeviceId = device_id;
                 setStatus("spotify: ready");
                 try {
+                    // Activate audio element (required for Web Audio API)
                     if (typeof spotifyPlayer.activateElement === 'function') {
                         spotifyPlayer.activateElement();
                         console.log('spotify_sdk: activated element on ready event');
                     }
+                    // Set volume to maximum
                     if (typeof spotifyPlayer.setVolume === "function") {
                         Promise.resolve(spotifyPlayer.setVolume(1.0))
                             .then(() => console.log("spotify_sdk: setVolume(1.0) on ready"))
                             .catch((e: any) => console.warn("spotify_sdk: setVolume on ready failed", e));
                     }
+                    // Resume playback to ensure audio comes through this device
+                    if (typeof spotifyPlayer.resume === "function") {
+                        Promise.resolve(spotifyPlayer.resume())
+                            .then(() => console.log("spotify_sdk: resume() on ready"))
+                            .catch((e: any) => console.warn("spotify_sdk: resume on ready failed", e));
+                    }
+                    // Log current volume for debugging
                     if (typeof spotifyPlayer.getVolume === "function") {
                         Promise.resolve(spotifyPlayer.getVolume())
                             .then((v: any) => console.log("spotify_sdk: volume on ready", v))
