@@ -242,18 +242,16 @@ async function tryPlayPendingPlayback() {
     }
 }
 
-// Auto-activate audio (works in OBS Browser Source without user gesture)
-// For regular browsers, this may not work due to autoplay policy
+// Auto-activate audio on user interaction (fallback for browsers with autoplay restrictions)
 function autoActivateAudio() {
     if (!audioActivated) {
-        console.log("overlay: auto-activating audio");
+        console.log("overlay: auto-activating audio on user gesture");
         activateSpotifyElement();
         audioActivated = true;
     }
 }
 
-// Try to auto-activate immediately and on any user interaction
-autoActivateAudio();
+// Listen for user interactions to activate audio (fallback)
 document.addEventListener("click", autoActivateAudio, { once: true });
 document.addEventListener("keydown", autoActivateAudio, { once: true });
 document.addEventListener("touchstart", autoActivateAudio, { once: true });
@@ -319,6 +317,13 @@ wsClient = wsConnect(
                         }
                     }
                 } else {
+                    // SDK is ready - activate audio and register device
+                    if (!audioActivated) {
+                        console.log("overlay: auto-activating audio after SDK ready");
+                        activateSpotifyElement();
+                        audioActivated = true;
+                    }
+                    
                     // Send device_id to backend for playback control
                     const deviceId = getSpotifyDeviceIdModule();
                     if (deviceId && wsClient) {
