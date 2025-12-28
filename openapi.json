@@ -420,13 +420,14 @@
         }
       }
     },
-    "/vouchers": {
+    "/slot/voucher": {
       "get": {
         "tags": [
-          "vouchers"
+          "slot",
+          "voucher"
         ],
         "summary": "List Vouchers",
-        "operationId": "list_vouchers_vouchers_get",
+        "operationId": "list_vouchers_slot_voucher_get",
         "parameters": [
           {
             "name": "limit",
@@ -469,7 +470,7 @@
                   "items": {
                     "$ref": "#/components/schemas/VoucherOut"
                   },
-                  "title": "Response List Vouchers Vouchers Get"
+                  "title": "Response List Vouchers Slot Voucher Get"
                 }
               }
             }
@@ -488,10 +489,11 @@
       },
       "post": {
         "tags": [
-          "vouchers"
+          "slot",
+          "voucher"
         ],
         "summary": "Create Voucher",
-        "operationId": "create_voucher_vouchers_post",
+        "operationId": "create_voucher_slot_voucher_post",
         "requestBody": {
           "required": true,
           "content": {
@@ -526,13 +528,14 @@
         }
       }
     },
-    "/vouchers/by-user/{user_id}": {
+    "/slot/voucher/by-user/{user_id}": {
       "get": {
         "tags": [
-          "vouchers"
+          "slot",
+          "voucher"
         ],
         "summary": "Get Or Create Voucher By User",
-        "operationId": "get_or_create_voucher_by_user_vouchers_by_user__user_id__get",
+        "operationId": "get_or_create_voucher_by_user_slot_voucher_by_user__user_id__get",
         "parameters": [
           {
             "name": "user_id",
@@ -568,13 +571,14 @@
         }
       }
     },
-    "/vouchers/by-code/{code}": {
+    "/slot/voucher/by-code/{code}": {
       "get": {
         "tags": [
-          "vouchers"
+          "slot",
+          "voucher"
         ],
         "summary": "Get Voucher By Code",
-        "operationId": "get_voucher_by_code_vouchers_by_code__code__get",
+        "operationId": "get_voucher_by_code_slot_voucher_by_code__code__get",
         "parameters": [
           {
             "name": "code",
@@ -610,13 +614,59 @@
         }
       }
     },
-    "/vouchers/used": {
+    "/slot/voucher/{voucher_id}/play": {
+      "put": {
+        "tags": [
+          "slot",
+          "voucher"
+        ],
+        "summary": "Play Game",
+        "description": "Use a game from the voucher. Decrements remaining games by 1.\nReturns 404 if voucher not found or has no remaining games.",
+        "operationId": "play_game_slot_voucher__voucher_id__play_put",
+        "parameters": [
+          {
+            "name": "voucher_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Voucher Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoucherOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/slot/voucher/used": {
       "post": {
         "tags": [
-          "vouchers"
+          "slot",
+          "voucher"
         ],
         "summary": "Mark Voucher Used",
-        "operationId": "mark_voucher_used_vouchers_used_post",
+        "description": "DEPRECATED: Use PUT /{voucher_id}/play instead.\nThis endpoint is kept for backwards compatibility.",
+        "operationId": "mark_voucher_used_slot_voucher_used_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3250,6 +3300,11 @@
               }
             ],
             "title": "Issued By"
+          },
+          "total_games": {
+            "type": "integer",
+            "title": "Total Games",
+            "default": 1
           }
         },
         "type": "object",
@@ -3311,13 +3366,24 @@
             "type": "integer",
             "title": "Use Count",
             "default": 0
+          },
+          "total_games": {
+            "type": "integer",
+            "title": "Total Games",
+            "default": 1
+          },
+          "remaining_games": {
+            "type": "integer",
+            "title": "Remaining Games",
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
           "id",
           "code",
-          "created_at"
+          "created_at",
+          "remaining_games"
         ],
         "title": "VoucherOut"
       },

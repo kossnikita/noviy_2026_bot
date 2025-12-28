@@ -167,6 +167,9 @@ class Voucher(Base):
     use_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
+    total_games: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1"
+    )
 
 
 class Photo(Base):

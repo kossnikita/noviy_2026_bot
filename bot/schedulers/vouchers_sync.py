@@ -99,7 +99,7 @@ async def run_voucher_sync(
                         continue
 
                     try:
-                        v = api.get_json(f"/vouchers/by-code/{code}")
+                        v = api.get_json(f"/slot/voucher/by-code/{code}")
                         log.debug(f"Voucher by code {code}: {v}")
                     except ApiError:
                         log.info(
@@ -156,7 +156,7 @@ async def run_voucher_sync(
                         f"Fetching vouchers page offset={v_offset} limit={v_limit}"
                     )
                     vouchers = api.get_json(
-                        f"/vouchers?active_only=1&limit={v_limit}&offset={v_offset}"
+                        f"/slot/voucher?active_only=1&limit={v_limit}&offset={v_offset}"
                     )
                 except ApiError as e:
                     log.warning("Voucher list failed: %s", e)

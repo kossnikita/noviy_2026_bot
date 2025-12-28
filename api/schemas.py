@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 class _ORM(BaseModel):
@@ -181,6 +181,7 @@ class PrizeWinsCreate(BaseModel):
 class VoucherCreate(BaseModel):
     user_id: int
     issued_by: Optional[int] = None
+    total_games: int = 1
 
 
 class VoucherUse(BaseModel):
@@ -195,6 +196,12 @@ class VoucherOut(_ORM):
     created_at: datetime
     used_at: Optional[datetime] = None
     use_count: int = 0
+    total_games: int = 1
+    
+    @computed_field
+    @property
+    def remaining_games(self) -> int:
+        return max(0, self.total_games - self.use_count)
 
 
 # ---- Photos ----
