@@ -42,6 +42,9 @@ let wsClient: { send: (msg: any) => void } | null = null;
 // Cache of spotify_id -> added_by user ID from backend playlist
 let trackUserCache: Map<string, number> = new Map();
 
+// Audio activation flag - browsers require user gesture to enable audio
+let audioActivated = false;
+
 const playButton = (() => {
     try {
         const button = document.createElement("button");
@@ -243,8 +246,25 @@ if (playButton) {
     playButton.addEventListener("click", () => {
         console.log("overlay: play button clicked, activating audio");
         activateSpotifyElement();
+        audioActivated = true;
+        try {
+            sessionStorage.setItem("noviy_audio_activated", "1");
+        } catch (e) { /* ignore */ }
+        showPlayButton(false);
         void tryPlayPendingPlayback();
     });
+}
+
+// Check if audio was previously activated in this session
+try {
+    if (sessionStorage.getItem("noviy_audio_activated") === "1") {
+        audioActivated = true;
+    }
+} catch (e) { /* ignore */ }
+
+// Show Enable Audio button if not yet activated
+if (!audioActivated) {
+    showPlayButton(true, "🔊 Enable Audio");
 }
 
 setupSpotifyAuthButton(cfg, apiUrl, fetchSpotifyAccessTokenFromBackend, showSpotifyAuthPanel, setStatus);
