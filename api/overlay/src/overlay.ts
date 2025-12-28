@@ -176,11 +176,6 @@ function handleSpotifySdkState(state: any) {
             });
             spotifyCurrentTrackId = trackId;
         }
-        // If Spotify is playing but we haven't activated audio yet, show play button
-        if (!paused && !spotifyLastPlayingState) {
-            console.log("overlay: sdk reports playing, showing play button for audio activation");
-            showPlayButton(true, "Enable Audio");
-        }
         spotifyLastPlayingState = !paused;
     } catch (err) {
         console.warn("overlay: failed to handle sdk state", err);
@@ -216,7 +211,6 @@ async function tryPlayPendingPlayback() {
         try {
             await playAudioSrc(current.src);
             pendingPlayback = { kind: "none" };
-            showPlayButton(false);
         } catch (err) {
             console.warn("overlay: retrying audio playback failed", err);
         }
@@ -226,7 +220,6 @@ async function tryPlayPendingPlayback() {
             if (!ready) return;
             await playSpotifyTrack(current.spotifyId);
             pendingPlayback = { kind: "none" };
-            showPlayButton(false);
         } catch (err) {
             console.warn("overlay: retrying spotify playback failed", err);
         }

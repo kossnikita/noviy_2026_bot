@@ -137,7 +137,14 @@ export async function initSpotifyPlayerIfNeeded(cfg: OverlayConfig, getSpotifyAc
             spotifyPlayer.addListener("ready", ({ device_id }: any) => {
                 spotifyDeviceId = device_id;
                 setStatus("spotify: ready");
-                finish(true);
+                try {
+                    if (typeof spotifyPlayer.activateElement === 'function') {
+                        spotifyPlayer.activateElement();
+                        console.log('spotify_sdk: activated element on ready event');
+                    }
+                } catch (err) {
+                    console.warn('spotify_sdk: activateElement on ready failed', err);
+                }                finish(true);
             });
             spotifyPlayer.addListener("not_ready", ({ device_id }: any) => {
                 setStatus("spotify: not ready");
