@@ -194,6 +194,21 @@ async def add_track_to_playlist(
     logger.info("Added track %s to playlist %s", spotify_id, playlist_id)
 
 
+async def transfer_playback(
+    token: str,
+    device_id: str,
+    play: bool = False,
+) -> None:
+    """Transfer playback to a specific device."""
+    await _spotify_request(
+        "PUT",
+        "/me/player",
+        token,
+        json_body={"device_ids": [device_id], "play": play},
+    )
+    logger.info("Transferred playback to device: %s (play=%s)", device_id, play)
+
+
 async def start_playlist_playback(
     token: str,
     playlist_id: str,
@@ -201,6 +216,13 @@ async def start_playlist_playback(
     offset_index: int = 0,
 ) -> None:
     """Start playback of the playlist on a device."""
+    # First transfer playback to the device to make it active
+    if device_id:
+        try:
+            await transfer_playback(token, device_id, play=False)
+        except SpotifyPlaylistError as e:
+            logger.warning("Transfer playback failed (continuing): %s", e)
+    
     context_uri = f"spotify:playlist:{playlist_id}"
     
     body: dict[str, Any] = {
