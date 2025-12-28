@@ -250,3 +250,31 @@ export async function spotifyPrev(getSpotifyAccessToken: () => Promise<string | 
     if (!spotifyDeviceId) return;
     await spotifyApiRequest(`/me/player/previous?device_id=${encodeURIComponent(spotifyDeviceId)}`, "POST", undefined, getSpotifyAccessToken);
 }
+
+export async function getSpotifyCurrentTrackId(getSpotifyAccessToken: () => Promise<string | null>): Promise<string | null> {
+    if (!spotifyDeviceId) return null;
+    const token = await getSpotifyAccessToken();
+    if (!token) return null;
+    const url = `https://api.spotify.com/v1/me/player/currently-playing?device_id=${encodeURIComponent(spotifyDeviceId)}`;
+    try {
+        const res = await fetch(url, {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+        });
+        if (res.status === 204) return null;
+        if (!res.ok) {
+            console.warn("overlay: failed to read spotify current track", res.status);
+            return null;
+        }
+        const data = (await res.json()) as any;
+        const id = data?.item?.id;
+        if (typeof id === "string" && id.trim()) return id.trim();
+        return null;
+    } catch (err) {
+        console.warn("overlay: spotify current track request failed", err);
+        return null;
+    }
+}

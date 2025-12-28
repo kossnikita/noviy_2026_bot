@@ -23,6 +23,7 @@ import {
     spotifyPlayTrack as spotifyPlayTrackModule,
     enqueueSpotifyTrack as enqueueSpotifyTrackModule,
     spotifyNext as spotifyNextModule,
+    getSpotifyCurrentTrackId as getSpotifyCurrentTrackIdModule,
 } from "./overlay/spotify_sdk";
 import { SpotifyQueueManager } from "./overlay/spotify_queue";
 
@@ -138,6 +139,7 @@ const enqueueSpotifyTrack = (spotifyId: string) =>
     enqueueSpotifyTrackModule(spotifyId, getSpotifyAccessToken);
 
 const spotifyNext = () => spotifyNextModule(getSpotifyAccessToken);
+const getSpotifyCurrentTrackId = () => getSpotifyCurrentTrackIdModule(getSpotifyAccessToken);
 const spotifyQueueManager = new SpotifyQueueManager(enqueueSpotifyTrack);
 
 async function tryPlayPendingPlayback() {
@@ -246,6 +248,18 @@ wsConnect(
                         if (ready) {
                             let playbackTriggered = false;
                             let playbackFailed = false;
+                            if (state.playing) {
+                                const actualId = await getSpotifyCurrentTrackId();
+                                if (actualId && actualId !== spotifyTrackId) {
+                                    console.warn(
+                                        "overlay: spotify current track differs from overlay",
+                                        { overlay: spotifyTrackId, spotify: actualId }
+                                    );
+                                }
+                                if (actualId) {
+                                    spotifyCurrentTrackId = actualId;
+                                }
+                            }
                             if (state.playing) {
                                 const needsPlay =
                                     spotifyTrackId !== spotifyCurrentTrackId ||
