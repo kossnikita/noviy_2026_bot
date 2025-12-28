@@ -3,6 +3,8 @@ import { User, TrackMeta, Photo, QueueItem } from "./types";
 
 export const userNameCache = new Map<string, string>();
 export const trackCache = new Map<string, TrackMeta>();
+const trackMetaPrefetchInFlight = new Set<string>();
+const coverPrefetchCache = new Set<string>();
 
 export async function fetchJson(url: string, headers: () => HeadersInit): Promise<any> {
     const r = await fetch(url, { headers: headers(), cache: "no-store" });
@@ -30,6 +32,14 @@ export async function getUserName(userId: string, apiUrl: (p: string) => string,
     }
 }
 
+function preloadCoverImage(url: string) {
+    if (!url) return;
+    if (coverPrefetchCache.has(url)) return;
+    coverPrefetchCache.add(url);
+    const img = new Image();
+    img.src = url;
+}
+
 export async function getSpotifyOEmbed(trackId: string): Promise<TrackMeta> {
     const id = trackId.trim();
     const cached = trackCache.get(id);
@@ -53,5 +63,26 @@ export async function getSpotifyOEmbed(trackId: string): Promise<TrackMeta> {
     }
     const meta = { title: t || id, artists: a, coverUrl: thumb };
     trackCache.set(id, meta);
+    preloadCoverImage(thumb);
     return meta;
+}
+
+export function prefetchTrackMeta(trackIds: string[], offset = 0, limit = 0) {
+    if (!Array.isArray(trackIds) || !trackIds.length) return;
+    const normalized = trackIds
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter(Boolean);
+    if (!normalized.length) return;
+    const start = Math.max(0, offset);
+    const end = limit > 0 ? Math.min(start + limit, normalized.length) : normalized.length;
+    for (let i = start; i < end; i++) {
+        const id = normalized[i];
+        if (!id) continue;
+        if (trackCache.has(id) || trackMetaPrefetchInFlight.has(id)) continue;
+        trackMetaPrefetchInFlight.add(id);
+        void getSpotifyOEmbed(id)
+            .then((meta) => preloadCoverImage(meta.coverUrl))
+            .catch(() => { /* tolerable failure */ })
+            .finally(() => trackMetaPrefetchInFlight.delete(id));
+    }
 }

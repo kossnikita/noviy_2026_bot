@@ -5,10 +5,10 @@ import { applyAnimation, safeSetImage } from "./dom_helpers";
 
 export function renderTrack(meta: TrackMeta, requestedBy: string) {
     console.log("overlay: renderTrack", { title: meta.title, artists: meta.artists, coverUrl: meta.coverUrl, requestedBy });
-    titleEl.textContent = meta.title || "Idle";
+    titleEl.textContent = meta.title || "Ожидание";
     artistsEl.textContent = meta.artists || "";
     albumEl.textContent = "";
-    requestedByEl.textContent = requestedBy ? `Requested by: ${requestedBy}` : "";
+    requestedByEl.textContent = requestedBy ? `Заказано: ${requestedBy}` : "";
     safeSetImage(coverImg, meta.coverUrl);
     applyAnimation(coverImg);
 }
