@@ -10,6 +10,11 @@ export type SpotifyQueueSummary = {
 export type SpotifyState = "state";
 
 const MAX_PRELOAD = 64;
+const ENQUEUE_RETRIES = 3;
+
+function delay(ms: number) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 export class SpotifyQueueManager {
     private queuedSpotifyIds = new Set<string>();
@@ -62,12 +67,21 @@ export class SpotifyQueueManager {
         const toQueue = futureIds.slice(0, MAX_PRELOAD);
         for (const id of toQueue) {
             if (this.queuedSpotifyIds.has(id)) continue;
-            try {
-                await this.enqueue(id);
+            let ok = false;
+            for (let attempt = 0; attempt < ENQUEUE_RETRIES; attempt++) {
+                try {
+                    await this.enqueue(id);
+                    ok = true;
+                    break;
+                } catch (err) {
+                    console.warn("spotify_queue: failed to enqueue", { id, attempt, err });
+                    if (attempt < ENQUEUE_RETRIES - 1) {
+                        await delay(200 * (attempt + 1));
+                    }
+                }
+            }
+            if (ok) {
                 this.queuedSpotifyIds.add(id);
-            } catch (err) {
-                console.warn("spotify_queue: failed to enqueue", err);
-                break;
             }
         }
         const futureSet = new Set(futureIds);

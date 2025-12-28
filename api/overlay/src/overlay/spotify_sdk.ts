@@ -9,6 +9,31 @@ let spotifyAccessToken: string | null = null;
 let spotifyAccessTokenExpiresAt: number = 0;
 let spotifyTokenLastAttemptAt = 0;
 let spotifyPlaybackDisabledReason: string | null = null;
+let spotifyStateListener: ((state: any) => void) | null = null;
+
+export function setSpotifyStateListener(listener: ((state: any) => void) | null) {
+    spotifyStateListener = listener;
+}
+
+export function activateSpotifyElement(): boolean {
+    if (!spotifyPlayer) {
+        console.warn("spotify_sdk: cannot activate element - player not initialized");
+        return false;
+    }
+    try {
+        if (typeof spotifyPlayer.activateElement === "function") {
+            spotifyPlayer.activateElement();
+            console.log("spotify_sdk: activated element for autoplay");
+            return true;
+        } else {
+            console.warn("spotify_sdk: activateElement not available");
+            return false;
+        }
+    } catch (err) {
+        console.warn("spotify_sdk: activateElement failed", err);
+        return false;
+    }
+}
 
 export function loadSpotifySdk(): Promise<void> {
     if (spotifySdkLoaded || (window as any).Spotify) {
@@ -101,6 +126,13 @@ export async function initSpotifyPlayerIfNeeded(cfg: OverlayConfig, getSpotifyAc
                         .catch(() => cb(""));
                 },
                 volume: 0.8,
+            });
+            spotifyPlayer.addListener("player_state_changed", (state: any) => {
+                try {
+                    if (spotifyStateListener) spotifyStateListener(state);
+                } catch (err) {
+                    console.warn("overlay: spotify state listener failed", err);
+                }
             });
             spotifyPlayer.addListener("ready", ({ device_id }: any) => {
                 spotifyDeviceId = device_id;
@@ -229,11 +261,17 @@ export async function spotifyPlayTrack(spotifyId: string, getSpotifyAccessToken:
         await initSpotifyPlayerIfNeeded;
         if (!spotifyDeviceId) throw new Error("No spotify device id");
     }
+    console.log("spotify_sdk: transferring playback to device", { deviceId: spotifyDeviceId, spotifyId });
     try {
         await spotifyApiRequest("/me/player", "PUT", { device_ids: [spotifyDeviceId], play: false }, getSpotifyAccessToken);
-    } catch { }
+        console.log("spotify_sdk: device transfer complete");
+    } catch (err) {
+        console.warn("spotify_sdk: device transfer failed, continuing", err);
+    }
     const uri = `spotify:track:${spotifyId}`;
+    console.log("spotify_sdk: starting playback", { uri });
     await spotifyApiRequest(`/me/player/play?device_id=${encodeURIComponent(spotifyDeviceId!)}`, "PUT", { uris: [uri] }, getSpotifyAccessToken);
+    console.log("spotify_sdk: playback started");
 }
 
 export async function spotifyPause(getSpotifyAccessToken: () => Promise<string | null>) {

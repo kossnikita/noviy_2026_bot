@@ -24,6 +24,8 @@ import {
     enqueueSpotifyTrack as enqueueSpotifyTrackModule,
     spotifyNext as spotifyNextModule,
     getSpotifyCurrentTrackId as getSpotifyCurrentTrackIdModule,
+    setSpotifyStateListener as setSpotifyStateListenerModule,
+    activateSpotifyElement as activateSpotifyElementModule,
 } from "./overlay/spotify_sdk";
 import { SpotifyQueueManager } from "./overlay/spotify_queue";
 
@@ -38,6 +40,8 @@ let pendingPlayback: PendingPlayback = { kind: "none" };
 let lastPhotoId = 0;
 let spotifyCurrentTrackId: string | null = null;
 let spotifyLastPlayingState = false;
+let lastStateVersion = 0;
+let spotifyOp: Promise<void> | null = null;
 
 const playButton = (() => {
     try {
@@ -155,9 +159,58 @@ const enqueueSpotifyTrack = (spotifyId: string) =>
 
 const spotifyNext = () => spotifyNextModule(getSpotifyAccessToken);
 const getSpotifyCurrentTrackId = () => getSpotifyCurrentTrackIdModule(getSpotifyAccessToken);
+const setSpotifyStateListener = (listener: ((state: any) => void) | null) =>
+    setSpotifyStateListenerModule(listener);
+const activateSpotifyElement = () => activateSpotifyElementModule();
 const spotifyQueueManager = new SpotifyQueueManager(enqueueSpotifyTrack);
 
+function handleSpotifySdkState(state: any) {
+    try {
+        const trackId: string | null = state?.track_window?.current_track?.id || null;
+        const paused = Boolean(state?.paused);
+        if (trackId && trackId !== spotifyCurrentTrackId) {
+            console.warn("overlay: sdk track differs from overlay", {
+                sdk: trackId,
+                overlay: spotifyCurrentTrackId,
+                lastStateVersion,
+            });
+            spotifyCurrentTrackId = trackId;
+        }
+        // If Spotify is playing but we haven't activated audio yet, show play button
+        if (!paused && !spotifyLastPlayingState) {
+            console.log("overlay: sdk reports playing, showing play button for audio activation");
+            showPlayButton(true, "Enable Audio");
+        }
+        spotifyLastPlayingState = !paused;
+    } catch (err) {
+        console.warn("overlay: failed to handle sdk state", err);
+    }
+}
+
+setSpotifyStateListener(handleSpotifySdkState);
+
+async function runSpotifyOp(fn: () => Promise<void>) {
+    if (spotifyOp) {
+        try {
+            await spotifyOp;
+        } catch {
+            /* ignore previous op failure */
+        }
+    }
+    const p = (async () => {
+        try {
+            await fn();
+        } finally {
+            spotifyOp = null;
+        }
+    })();
+    spotifyOp = p;
+    return p;
+}
+
 async function tryPlayPendingPlayback() {
+    // Always try to activate Spotify element on user gesture
+    activateSpotifyElement();
     const current = pendingPlayback;
     if (current.kind === "audio") {
         try {
@@ -177,11 +230,25 @@ async function tryPlayPendingPlayback() {
         } catch (err) {
             console.warn("overlay: retrying spotify playback failed", err);
         }
+    } else {
+        // No pending playback but user clicked - just activate audio and resume if Spotify is playing
+        console.log("overlay: no pending playback, resuming spotify if paused");
+        try {
+            const ready = await initSpotifyPlayerIfNeeded();
+            if (ready && spotifyCurrentTrackId) {
+                await playSpotifyTrack(spotifyCurrentTrackId);
+            }
+            showPlayButton(false);
+        } catch (err) {
+            console.warn("overlay: resume failed", err);
+        }
     }
 }
 
 if (playButton) {
     playButton.addEventListener("click", () => {
+        console.log("overlay: play button clicked, activating audio");
+        activateSpotifyElement();
         void tryPlayPendingPlayback();
     });
 }
@@ -210,6 +277,16 @@ wsConnect(
         try {
             if (msg && msg.type === "state") {
                 const state = msg as any;
+                const version = typeof state.version === "number" ? state.version : 0;
+                if (version && version <= lastStateVersion) {
+                    console.warn("overlay: stale state ignored", { version, lastStateVersion });
+                    return;
+                }
+                if (version) {
+                    lastStateVersion = version;
+                } else {
+                    lastStateVersion += 1;
+                }
                 const cur = state.current || null;
                 if (cur && cur.spotify_id) {
                     try {
@@ -240,6 +317,7 @@ wsConnect(
                 const summary = spotifyQueueManager.summarize(state, fallbackSpotifyId);
                 const playlistIndex = summary.playlistIndex;
                 const spotifyTrackId = summary.spotifyTrackId;
+                const nonSequentialJump = Boolean(spotifyTrackId && !summary.sequentialAdvance);
                 void prefetchTrackMeta(summary.playlistIds);
                 logStateUpdate(state, summary, audioUrl);
 
@@ -266,6 +344,13 @@ wsConnect(
                     try {
                         const ready = await initSpotifyPlayerIfNeeded();
                         if (ready) {
+                            if (nonSequentialJump) {
+                                console.warn("overlay: non-sequential jump detected, resetting queue", {
+                                    playlistIndex,
+                                    lastStateVersion,
+                                });
+                                spotifyQueueManager.reset();
+                            }
                             console.log("overlay: spotify path", {
                                 playing: state.playing,
                                 spotifyTrackId,
@@ -275,33 +360,49 @@ wsConnect(
                             });
                             let playbackTriggered = false;
                             let playbackFailed = false;
+                            let forcePlay = false;
                             if (state.playing) {
                                 const actualId = await getSpotifyCurrentTrackId();
                                 if (actualId && actualId !== spotifyTrackId) {
                                     console.warn(
-                                        "overlay: spotify current track differs from overlay",
+                                        "overlay: spotify current track differs from overlay, forcing sync",
                                         { overlay: spotifyTrackId, spotify: actualId }
                                     );
-                                }
-                                if (actualId) {
+                                    forcePlay = true;
+                                    try {
+                                        await runSpotifyOp(() => pauseSpotify());
+                                        console.log("overlay: paused for resync");
+                                        await new Promise(r => setTimeout(r, 300));
+                                    } catch (err) {
+                                        console.warn("overlay: pause before resync failed", err);
+                                    }
+                                } else if (actualId) {
                                     spotifyCurrentTrackId = actualId;
                                 }
-                                console.log("overlay: spotify reported current track", { actualId });
+                                console.log("overlay: spotify reported current track", { actualId, forcePlay });
                             }
                             if (state.playing) {
                                 const needsPlay =
+                                    forcePlay ||
                                     spotifyTrackId !== spotifyCurrentTrackId ||
                                     !spotifyLastPlayingState;
-                                console.log("overlay: compute needsPlay", { needsPlay, spotifyTrackId, spotifyCurrentTrackId, lastState: spotifyLastPlayingState });
+                                console.log("overlay: compute needsPlay", { needsPlay, forcePlay, spotifyTrackId, spotifyCurrentTrackId, lastState: spotifyLastPlayingState });
                                 if (needsPlay) {
                                     const shouldNext = spotifyQueueManager.shouldUseNext(summary);
-                                    console.log("overlay: spotify transition", { shouldUseNext: shouldNext });
+                                    console.log("overlay: spotify transition", { shouldUseNext: shouldNext, forcePlay });
                                     try {
-                                        if (shouldNext) {
-                                            await spotifyNext();
+                                        if (shouldNext && !forcePlay) {
+                                            await runSpotifyOp(() => spotifyNext());
                                             console.log("overlay: called spotifyNext to advance", { spotifyTrackId });
                                         } else {
-                                            await playSpotifyTrack(spotifyTrackId);
+                                            if (forcePlay) {
+                                                console.log("overlay: forced play detected, resetting queue for fresh preload", {
+                                                    spotifyTrackId,
+                                                    playlistIndex,
+                                                });
+                                                spotifyQueueManager.reset();
+                                            }
+                                            await runSpotifyOp(() => playSpotifyTrack(spotifyTrackId));
                                             console.log("overlay: called playSpotifyTrack", { spotifyTrackId });
                                         }
                                         pendingPlayback = { kind: "none" };
@@ -316,7 +417,7 @@ wsConnect(
                                 }
                             } else if (spotifyLastPlayingState) {
                                 console.log("overlay: spotify reported stop, issuing pause");
-                                await pauseSpotify();
+                                await runSpotifyOp(() => pauseSpotify());
                                 pendingPlayback = { kind: "none" };
                                 showPlayButton(false);
                             }
@@ -330,11 +431,14 @@ wsConnect(
                             }
 
                             if (!playbackFailed && spotifyTrackId) {
-                                spotifyQueueManager.consume(spotifyTrackId);
+                                if (!forcePlay) {
+                                    spotifyQueueManager.consume(spotifyTrackId);
+                                }
                                 if (playlistIndex >= 0) {
                                     console.log("overlay: spotify preloading future tracks", {
                                         playlistIndex,
                                         playlistIds: summary.playlistIds.length,
+                                        isResync: forcePlay,
                                     });
                                     await spotifyQueueManager.preload(summary);
                                 }

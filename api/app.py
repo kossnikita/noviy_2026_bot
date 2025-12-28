@@ -67,6 +67,7 @@ class _PlayerController:
     index: int | None = None
     playlist: list[SpotifyTrack] = field(default_factory=list)
     clients: set[WebSocket] = field(default_factory=set)
+    version: int = 0
 
     def _current(self) -> SpotifyTrack | None:
         if self.index is None:
@@ -92,6 +93,7 @@ def _player_state_payload(ctrl: _PlayerController) -> dict[str, Any]:
     current = ctrl._current()
     return {
         "type": "state",
+        "version": int(ctrl.version),
         "playing": bool(ctrl.playing),
         "index": ctrl.index,
         "current": _track_to_dict(current) if current is not None else None,
@@ -168,7 +170,12 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             return
 
         token_hash = _hash_token(token)
-        exists = s.scalar(select(ApiToken.id).where(ApiToken.token_hash == token_hash)) is not None
+        exists = (
+            s.scalar(
+                select(ApiToken.id).where(ApiToken.token_hash == token_hash)
+            )
+            is not None
+        )
         if exists:
             logger.info(
                 "BOT_API_TOKEN from env already exists in DB (token_hash_prefix=%s)",
@@ -230,7 +237,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         token_hash = _hash_token(token)
         try:
             with request.app.state.db.session() as s:
-                row = s.scalar(select(ApiToken).where(ApiToken.token_hash == token_hash))
+                row = s.scalar(
+                    select(ApiToken).where(ApiToken.token_hash == token_hash)
+                )
                 if row is None:
                     return (False, "Invalid API token")
         except Exception:
@@ -243,7 +252,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         logger.info("API starting")
         if db is None:
             database_url = (_env("DATABASE_URL", "") or "").strip()
-            db_path = (_env("DB_PATH", "database.sqlite3") or "database.sqlite3").strip()
+            db_path = (
+                _env("DB_PATH", "database.sqlite3") or "database.sqlite3"
+            ).strip()
             app.state.db = init_db(database_url=database_url, db_path=db_path)
             logger.info("DB initialized for API (db_path=%s)", db_path)
         else:
@@ -325,7 +336,11 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         )
         return list(s.scalars(stmt))
 
-    async def _broadcast_player_state(ctrl: _PlayerController) -> None:
+    async def _broadcast_player_state(
+        ctrl: _PlayerController, *, bump: bool = False
+    ) -> None:
+        if bump:
+            ctrl.version += 1
         payload = _player_state_payload(ctrl)
         dead: list[WebSocket] = []
         for ws in list(ctrl.clients):
@@ -352,6 +367,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                 ctrl.index = 0
             if ctrl.index is not None and ctrl.index >= len(ctrl.playlist):
                 ctrl.index = 0 if ctrl.playlist else None
+            ctrl.version += 1
             await ws.send_json(_player_state_payload(ctrl))
 
         try:
@@ -398,19 +414,19 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             ctrl.playlist
                         ):
                             ctrl.index = 0 if ctrl.playlist else None
-                        await _broadcast_player_state(ctrl)
+                        await _broadcast_player_state(ctrl, bump=True)
                         continue
 
                     if op == "play":
                         ctrl.playing = True
                         if ctrl.index is None and ctrl.playlist:
                             ctrl.index = 0
-                        await _broadcast_player_state(ctrl)
+                        await _broadcast_player_state(ctrl, bump=True)
                         continue
 
                     if op == "pause":
                         ctrl.playing = False
-                        await _broadcast_player_state(ctrl)
+                        await _broadcast_player_state(ctrl, bump=True)
                         continue
 
                     if op in {"next", "next_track"}:
@@ -421,7 +437,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                                 ctrl.index = min(
                                     ctrl.index + 1, len(ctrl.playlist) - 1
                                 )
-                        await _broadcast_player_state(ctrl)
+                        await _broadcast_player_state(ctrl, bump=True)
                         continue
 
                     if op in {"prev", "previous", "prev_track"}:
@@ -430,7 +446,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                                 ctrl.index = 0
                             else:
                                 ctrl.index = max(ctrl.index - 1, 0)
-                        await _broadcast_player_state(ctrl)
+                        await _broadcast_player_state(ctrl, bump=True)
                         continue
 
                     if op in {"set_index", "seek"}:
@@ -450,7 +466,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             )
                             continue
                         ctrl.index = idx
-                        await _broadcast_player_state(ctrl)
+                        await _broadcast_player_state(ctrl, bump=True)
                         continue
 
                     await ws.send_json(
@@ -472,7 +488,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             ctrl.playing = True
             if ctrl.index is None and ctrl.playlist:
                 ctrl.index = 0
-            await _broadcast_player_state(ctrl)
+            await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
     @app.post("/player/pause")
@@ -480,7 +496,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         ctrl: _PlayerController = app.state.player
         async with ctrl.lock:
             ctrl.playing = False
-            await _broadcast_player_state(ctrl)
+            await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
     @app.post("/player/shuffle")
@@ -490,7 +506,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             if ctrl.playlist:
                 random.shuffle(ctrl.playlist)
                 ctrl.index = 0 if ctrl.playlist else None
-            await _broadcast_player_state(ctrl)
+            await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
     @app.post("/player/prev")
@@ -502,7 +518,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                     ctrl.index = 0
                 else:
                     ctrl.index = (ctrl.index - 1) % len(ctrl.playlist)
-            await _broadcast_player_state(ctrl)
+            await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
     @app.post("/player/next")
@@ -514,7 +530,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                     ctrl.index = 0
                 else:
                     ctrl.index = (ctrl.index + 1) % len(ctrl.playlist)
-            await _broadcast_player_state(ctrl)
+            await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
     @contextmanager
