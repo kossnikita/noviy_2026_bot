@@ -40,9 +40,21 @@ export function tryExtractPhoto(msg: any): Photo | null {
 }
 
 // wsConnect will be refactored to accept callbacks for photo and state events
-export function wsConnect(cfg: OverlayConfig, originHttp: string, apiUrl: (p: string) => string, setStatus: (msg: string) => void, onPhoto: (photo: Photo) => void, onState: (msg: any) => void) {
+export function wsConnect(cfg: OverlayConfig, originHttp: string, apiUrl: (p: string) => string, setStatus: (msg: string) => void, onPhoto: (photo: Photo) => void, onState: (msg: any) => void): { send: (msg: any) => void } {
     const baseWs = cfg.WS_URL || (originHttp ? wsFromHttp(originHttp) + "/api/ws/player" : "");
-    if (!baseWs) return;
+    let currentWs: WebSocket | null = null;
+    
+    const sendMessage = (msg: any) => {
+        if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+            try {
+                currentWs.send(JSON.stringify(msg));
+            } catch (err) {
+                console.warn("overlay: failed to send ws message", err);
+            }
+        }
+    };
+    
+    if (!baseWs) return { send: sendMessage };
     const { url, protocols } = withWsToken(baseWs, cfg);
     let backoff = 800;
     const connect = () => {
@@ -56,6 +68,7 @@ export function wsConnect(cfg: OverlayConfig, originHttp: string, apiUrl: (p: st
             backoff = Math.min(backoff * 1.5, 8000);
             return;
         }
+        currentWs = ws;
         ws.onopen = () => {
             backoff = 800;
             setStatus("ws: connected");
@@ -76,6 +89,7 @@ export function wsConnect(cfg: OverlayConfig, originHttp: string, apiUrl: (p: st
             }
         };
         ws.onclose = () => {
+            if (currentWs === ws) currentWs = null;
             setStatus("ws: disconnected");
             window.setTimeout(connect, backoff);
             backoff = Math.min(backoff * 1.5, 8000);
@@ -85,4 +99,5 @@ export function wsConnect(cfg: OverlayConfig, originHttp: string, apiUrl: (p: st
         };
     };
     connect();
+    return { send: sendMessage };
 }

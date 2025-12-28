@@ -100,8 +100,7 @@ def _required_oauth_config() -> tuple[str, str, str]:
 
 
 def _scopes() -> str:
-    # Minimal set for Web Playback SDK + player control.
-    # Add more only if needed.
+    # Minimal set for Web Playback SDK + player control + playlist management.
     return " ".join(
         [
             "streaming",
@@ -110,6 +109,7 @@ def _scopes() -> str:
             "user-modify-playback-state",
             "user-read-currently-playing",
             "user-read-private",
+            "playlist-modify-private",
         ]
     )
 

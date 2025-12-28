@@ -36,6 +36,7 @@ from api.photos import router as photos_router
 from api.spotify_oauth import router as spotify_oauth_router
 from api.slot import router as prizes_router
 from api.vouchers import router as vouchers_router
+from api import spotify_playlist
 
 from .schemas import (
     BlacklistByUsername,
@@ -68,6 +69,7 @@ class _PlayerController:
     playlist: list[SpotifyTrack] = field(default_factory=list)
     clients: set[WebSocket] = field(default_factory=set)
     version: int = 0
+    spotify_playlist_id: str | None = None  # Spotify playlist ID for sync
 
     def _current(self) -> SpotifyTrack | None:
         if self.index is None:
@@ -336,6 +338,70 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         )
         return list(s.scalars(stmt))
 
+    def _get_spotify_token() -> str | None:
+        """Get a valid Spotify access token from the OAuth store."""
+        from api.spotify_oauth import _read_store, _refresh_access_token, _write_store
+        import time as _time
+        
+        store = _read_store()
+        if store is None:
+            return None
+        
+        now = _time.time()
+        if not store.access_token or now >= (store.expires_at - 30):
+            try:
+                store = _refresh_access_token(store.refresh_token)
+                _write_store(store)
+            except Exception as e:
+                logger.warning("Failed to refresh Spotify token: %s", e)
+                return None
+        
+        return store.access_token
+
+    async def _sync_spotify_playlist(ctrl: _PlayerController) -> str | None:
+        """Sync the current playlist to Spotify. Returns playlist_id or None on error."""
+        token = _get_spotify_token()
+        if not token:
+            logger.warning("Cannot sync Spotify playlist: no token available")
+            return None
+        
+        try:
+            # Get or create the playlist
+            playlist_id = await spotify_playlist.get_or_create_playlist(token)
+            ctrl.spotify_playlist_id = playlist_id
+            
+            # Get all Spotify track IDs from current playlist
+            spotify_ids = [t.spotify_id for t in ctrl.playlist if t.spotify_id]
+            
+            # Replace playlist tracks
+            await spotify_playlist.replace_playlist_tracks(token, playlist_id, spotify_ids)
+            
+            logger.info("Synced %d tracks to Spotify playlist %s", len(spotify_ids), playlist_id)
+            return playlist_id
+        except Exception as e:
+            logger.error("Failed to sync Spotify playlist: %s", e)
+            return None
+
+    async def _start_spotify_playlist(ctrl: _PlayerController, offset: int = 0) -> bool:
+        """Start playback of the synced Spotify playlist. Returns True on success."""
+        if not ctrl.spotify_playlist_id:
+            return False
+        
+        token = _get_spotify_token()
+        if not token:
+            return False
+        
+        try:
+            await spotify_playlist.start_playlist_playback(
+                token,
+                ctrl.spotify_playlist_id,
+                offset_index=offset,
+            )
+            return True
+        except Exception as e:
+            logger.error("Failed to start Spotify playlist: %s", e)
+            return False
+
     async def _broadcast_player_state(
         ctrl: _PlayerController, *, bump: bool = False
     ) -> None:
@@ -488,6 +554,11 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             ctrl.playing = True
             if ctrl.index is None and ctrl.playlist:
                 ctrl.index = 0
+            
+            # Start Spotify playlist playback if we have a synced playlist
+            if ctrl.spotify_playlist_id and ctrl.index is not None:
+                await _start_spotify_playlist(ctrl, offset=ctrl.index)
+            
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
@@ -496,6 +567,15 @@ def create_app(*, db: Db | None = None) -> FastAPI:
         ctrl: _PlayerController = app.state.player
         async with ctrl.lock:
             ctrl.playing = False
+            
+            # Pause Spotify playback
+            token = _get_spotify_token()
+            if token:
+                try:
+                    await spotify_playlist.pause_playback(token)
+                except Exception as e:
+                    logger.warning("Failed to pause Spotify: %s", e)
+            
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
@@ -506,6 +586,10 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             if ctrl.playlist:
                 random.shuffle(ctrl.playlist)
                 ctrl.index = 0 if ctrl.playlist else None
+            
+            # Sync shuffled playlist to Spotify
+            await _sync_spotify_playlist(ctrl)
+            
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
@@ -518,6 +602,15 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                     ctrl.index = 0
                 else:
                     ctrl.index = (ctrl.index - 1) % len(ctrl.playlist)
+            
+            # Skip to previous track in Spotify
+            token = _get_spotify_token()
+            if token:
+                try:
+                    await spotify_playlist.previous_track(token)
+                except Exception as e:
+                    logger.warning("Failed to skip Spotify prev: %s", e)
+            
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
@@ -530,8 +623,41 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                     ctrl.index = 0
                 else:
                     ctrl.index = (ctrl.index + 1) % len(ctrl.playlist)
+            
+            # Skip to next track in Spotify
+            token = _get_spotify_token()
+            if token:
+                try:
+                    await spotify_playlist.next_track(token)
+                except Exception as e:
+                    logger.warning("Failed to skip Spotify next: %s", e)
+            
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
+
+    @app.post("/player/sync")
+    async def player_sync(request: Request) -> dict:
+        """Sync the current playlist to Spotify and optionally start playback."""
+        ctrl: _PlayerController = app.state.player
+        async with ctrl.lock:
+            # Reload playlist from DB
+            with app.state.db.session() as s:
+                ctrl.playlist = _load_playlist(s)
+            if ctrl.index is None and ctrl.playlist:
+                ctrl.index = 0
+            if ctrl.index is not None and ctrl.index >= len(ctrl.playlist):
+                ctrl.index = 0 if ctrl.playlist else None
+            
+            # Sync to Spotify
+            playlist_id = await _sync_spotify_playlist(ctrl)
+            
+            await _broadcast_player_state(ctrl, bump=True)
+            
+            return {
+                **_player_state_payload(ctrl),
+                "spotify_playlist_id": playlist_id,
+                "synced": playlist_id is not None,
+            }
 
     @contextmanager
     def _session() -> Generator[Session, None, None]:

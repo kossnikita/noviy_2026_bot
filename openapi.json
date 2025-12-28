@@ -1090,6 +1090,27 @@
         }
       }
     },
+    "/player/sync": {
+      "post": {
+        "summary": "Player Sync",
+        "description": "Sync the current playlist to Spotify and optionally start playback.",
+        "operationId": "player_sync_player_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Player Sync Player Sync Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
