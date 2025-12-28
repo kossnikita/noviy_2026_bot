@@ -23,6 +23,7 @@ import {
     spotifyPlayTrack as spotifyPlayTrackModule,
     setSpotifyStateListener as setSpotifyStateListenerModule,
     activateSpotifyElement as activateSpotifyElementModule,
+    getSpotifyDeviceId as getSpotifyDeviceIdModule,
 } from "./overlay/spotify_sdk";
 
 declare global {
@@ -305,6 +306,13 @@ wsClient = wsConnect(
                             pendingPlayback = { kind: "spotify", spotifyId: cur.spotify_id };
                             showPlayButton(true, "Play");
                         }
+                    }
+                } else {
+                    // Send device_id to backend for playback control
+                    const deviceId = getSpotifyDeviceIdModule();
+                    if (deviceId && wsClient) {
+                        console.log("overlay: registering device_id with backend", deviceId);
+                        wsClient.send({ op: "register_device", device_id: deviceId });
                     }
                 }
                 

@@ -15,6 +15,10 @@ export function setSpotifyStateListener(listener: ((state: any) => void) | null)
     spotifyStateListener = listener;
 }
 
+export function getSpotifyDeviceId(): string | null {
+    return spotifyDeviceId;
+}
+
 export function activateSpotifyElement(): boolean {
     if (!spotifyPlayer) {
         console.warn("spotify_sdk: cannot activate element - player not initialized");
