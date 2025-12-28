@@ -70,9 +70,6 @@ class _PlayerController:
     clients: set[WebSocket] = field(default_factory=set)
     version: int = 0
     spotify_playlist_id: str | None = None  # Spotify playlist ID for sync
-    spotify_device_id: str | None = (
-        None  # Overlay's Web Playback SDK device ID
-    )
 
     def _current(self) -> SpotifyTrack | None:
         if self.index is None:
@@ -424,7 +421,6 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             await spotify_playlist.start_playlist_playback(
                 token,
                 ctrl.spotify_playlist_id,
-                device_id=ctrl.spotify_device_id,
                 offset_index=offset,
             )
             return True
@@ -565,28 +561,6 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                         await _broadcast_player_state(ctrl, bump=True)
                         continue
 
-                    if op == "register_device":
-                        device_id = (msg.get("device_id") or "").strip()
-                        if device_id:
-                            ctrl.spotify_device_id = device_id
-                            logger.info(
-                                "Registered Spotify device: %s", device_id
-                            )
-                            await ws.send_json(
-                                {
-                                    "type": "device_registered",
-                                    "device_id": device_id,
-                                }
-                            )
-                        else:
-                            await ws.send_json(
-                                {
-                                    "type": "error",
-                                    "message": "Missing device_id",
-                                }
-                            )
-                        continue
-
                     await ws.send_json(
                         {"type": "error", "message": f"Unknown op: {op}"}
                     )
@@ -624,9 +598,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             token = _get_spotify_token()
             if token:
                 try:
-                    await spotify_playlist.pause_playback(
-                        token, ctrl.spotify_device_id
-                    )
+                    await spotify_playlist.pause_playback(token)
                 except Exception as e:
                     logger.warning("Failed to pause Spotify: %s", e)
 
@@ -661,9 +633,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             token = _get_spotify_token()
             if token:
                 try:
-                    await spotify_playlist.previous_track(
-                        token, ctrl.spotify_device_id
-                    )
+                    await spotify_playlist.previous_track(token)
                 except Exception as e:
                     logger.warning("Failed to skip Spotify prev: %s", e)
 
@@ -684,9 +654,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             token = _get_spotify_token()
             if token:
                 try:
-                    await spotify_playlist.next_track(
-                        token, ctrl.spotify_device_id
-                    )
+                    await spotify_playlist.next_track(token)
                 except Exception as e:
                     logger.warning("Failed to skip Spotify next: %s", e)
 
