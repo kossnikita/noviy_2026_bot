@@ -28,6 +28,26 @@ export function activateSpotifyElement(): boolean {
         if (typeof spotifyPlayer.activateElement === "function") {
             spotifyPlayer.activateElement();
             console.log("spotify_sdk: activated element for autoplay");
+            try {
+                // Try to ensure audible output (some browsers/devices start at 0 volume)
+                if (typeof spotifyPlayer.setVolume === "function") {
+                    Promise.resolve(spotifyPlayer.setVolume(1.0))
+                        .then(() => console.log("spotify_sdk: setVolume(1.0) after activateElement"))
+                        .catch((e: any) => console.warn("spotify_sdk: setVolume after activateElement failed", e));
+                }
+                if (typeof spotifyPlayer.getVolume === "function") {
+                    Promise.resolve(spotifyPlayer.getVolume())
+                        .then((v: any) => console.log("spotify_sdk: current volume", v))
+                        .catch(() => undefined);
+                }
+                if (typeof spotifyPlayer.getCurrentState === "function") {
+                    Promise.resolve(spotifyPlayer.getCurrentState())
+                        .then((s: any) => console.log("spotify_sdk: current state after activateElement", s ? { paused: s.paused, position: s.position } : null))
+                        .catch(() => undefined);
+                }
+            } catch (e) {
+                // ignore
+            }
             return true;
         } else {
             console.warn("spotify_sdk: activateElement not available");
@@ -145,6 +165,16 @@ export async function initSpotifyPlayerIfNeeded(cfg: OverlayConfig, getSpotifyAc
                     if (typeof spotifyPlayer.activateElement === 'function') {
                         spotifyPlayer.activateElement();
                         console.log('spotify_sdk: activated element on ready event');
+                    }
+                    if (typeof spotifyPlayer.setVolume === "function") {
+                        Promise.resolve(spotifyPlayer.setVolume(1.0))
+                            .then(() => console.log("spotify_sdk: setVolume(1.0) on ready"))
+                            .catch((e: any) => console.warn("spotify_sdk: setVolume on ready failed", e));
+                    }
+                    if (typeof spotifyPlayer.getVolume === "function") {
+                        Promise.resolve(spotifyPlayer.getVolume())
+                            .then((v: any) => console.log("spotify_sdk: volume on ready", v))
+                            .catch(() => undefined);
                     }
                 } catch (err) {
                     console.warn('spotify_sdk: activateElement on ready failed', err);
