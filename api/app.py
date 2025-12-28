@@ -641,8 +641,8 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                 random.shuffle(ctrl.playlist)
                 ctrl.index = 0 if ctrl.playlist else None
 
-            # Sync shuffled playlist to Spotify
-            await _sync_spotify_playlist(ctrl)
+            # Sync shuffled playlist to Spotify in background (don't block response)
+            asyncio.create_task(_sync_spotify_playlist(ctrl))
 
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
