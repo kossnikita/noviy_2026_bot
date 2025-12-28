@@ -277,6 +277,8 @@ wsClient = wsConnect(
         }
     },
     async (msg) => {
+        console.log("overlay: onState called with type:", msg?.type);
+        console.log("overlay: ws message received", msg?.type, msg);
         try {
             if (msg && msg.type === "state") {
                 const state = msg as any;

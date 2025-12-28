@@ -71,21 +71,28 @@ export function wsConnect(cfg: OverlayConfig, originHttp: string, apiUrl: (p: st
         currentWs = ws;
         ws.onopen = () => {
             backoff = 800;
+            console.log("ws: connected to", url);
             setStatus("ws: connected");
         };
         ws.onmessage = async (ev) => {
+            console.log("ws: onmessage fired, data type:", typeof ev.data);
             try {
                 const raw = String(ev.data || "{}");
+                console.log("ws: raw message length:", raw.length, "first 100 chars:", raw.substring(0, 100));
                 const msg = JSON.parse(raw);
+                console.log("ws: parsed message type:", msg?.type);
                 // photo event
                 const p = tryExtractPhoto(msg);
+                console.log("ws: tryExtractPhoto result:", p ? "photo found" : "no photo");
                 if (p && p.id) {
+                    console.log("ws: calling onPhoto");
                     onPhoto(p);
                 } else {
+                    console.log("ws: calling onState with type:", msg?.type);
                     onState(msg);
                 }
-            } catch {
-                // ignore
+            } catch (err) {
+                console.error("ws: message handler error", err);
             }
         };
         ws.onclose = () => {
