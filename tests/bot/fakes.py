@@ -64,6 +64,17 @@ class FakeSession(BaseSession):
             }
             return Message.model_validate(msg)
 
+        if api == "sendPhoto":
+            payload = method.model_dump()
+            chat_id = payload["chat_id"]
+            # Telegram API returns an integer unix timestamp for `date`.
+            msg = {
+                "message_id": len(self.requests),
+                "date": 0,
+                "chat": {"id": chat_id, "type": "private"},
+            }
+            return Message.model_validate(msg)
+
         # Most bot setup calls return boolean in Telegram API.
         if api in {
             "setMyCommands",

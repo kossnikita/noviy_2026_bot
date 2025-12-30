@@ -103,7 +103,7 @@ async def run_voucher_sync(
                         )
                         try:
                             await bot.delete_message(
-                                chat_id=user_id, message_id=msg_id
+                                chat_id=user_id, message_id=msg_id, revoke=True
                             )
                             log.info(
                                 f"Successfully deleted Telegram message "
