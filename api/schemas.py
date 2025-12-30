@@ -197,11 +197,26 @@ class VoucherOut(_ORM):
     used_at: Optional[datetime] = None
     use_count: int = 0
     total_games: int = 1
-    
+
     @computed_field
     @property
     def remaining_games(self) -> int:
         return max(0, self.total_games - self.use_count)
+
+
+class VoucherMessageCreate(BaseModel):
+    user_id: int
+    voucher_code: str
+    message_id: int
+
+
+class VoucherMessageOut(_ORM):
+    id: int
+    user_id: int
+    voucher_code: str
+    message_id: int
+    sent_at: datetime
+    deleted_at: Optional[datetime] = None
 
 
 # ---- Photos ----

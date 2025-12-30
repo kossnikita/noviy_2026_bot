@@ -193,7 +193,7 @@ async def main() -> None:
 
     plugin_tasks = registry.start_system_background_tasks(bot)
     voucher_sync_task = asyncio.create_task(
-        run_voucher_sync(bot=bot, api=api, settings=settings),
+        run_voucher_sync(bot=bot, api=api),
         name="voucher-sync",
     )
     try:

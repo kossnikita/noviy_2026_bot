@@ -36,6 +36,7 @@ from api.photos import router as photos_router
 from api.spotify_oauth import router as spotify_oauth_router
 from api.slot import router as prizes_router
 from api.vouchers import router as vouchers_router
+from api.voucher_messages import router as voucher_messages_router
 from api import spotify_playlist
 
 from .schemas import (
@@ -277,6 +278,7 @@ def create_app(*, db: Db | None = None) -> FastAPI:
 
     app.include_router(prizes_router)
     app.include_router(vouchers_router)
+    app.include_router(voucher_messages_router)
     app.include_router(photos_router)
     app.include_router(spotify_oauth_router)
 

@@ -172,6 +172,25 @@ class Voucher(Base):
     )
 
 
+class VoucherMessage(Base):
+    """Track sent voucher DM messages for cleanup when vouchers are used up"""
+
+    __tablename__ = "voucher_messages"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    voucher_code: Mapped[str] = mapped_column(String, nullable=False)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
+
+
 class Photo(Base):
     __tablename__ = "photos"
 

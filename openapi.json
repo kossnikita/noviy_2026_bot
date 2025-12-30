@@ -739,6 +739,185 @@
         }
       }
     },
+    "/slot/voucher-messages": {
+      "post": {
+        "tags": [
+          "slot",
+          "voucher"
+        ],
+        "summary": "Create Voucher Message",
+        "description": "Create a new voucher message record (when DM is sent to user)",
+        "operationId": "create_voucher_message_slot_voucher_messages_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoucherMessageCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoucherMessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "slot",
+          "voucher"
+        ],
+        "summary": "List Voucher Messages",
+        "description": "List voucher messages.\nQuery parameters:\n- user_id: filter by user ID\n- voucher_code: filter by voucher code\n- active_only: if 1, only return records with deleted_at IS NULL (default 1)\n- limit, offset: pagination",
+        "operationId": "list_voucher_messages_slot_voucher_messages_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "voucher_code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Voucher Code"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Active Only"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VoucherMessageOut"
+                  },
+                  "title": "Response List Voucher Messages Slot Voucher Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/slot/voucher-messages/{message_record_id}": {
+      "delete": {
+        "tags": [
+          "slot",
+          "voucher"
+        ],
+        "summary": "Delete Voucher Message",
+        "description": "Mark voucher message record as deleted (soft delete)",
+        "operationId": "delete_voucher_message_slot_voucher_messages__message_record_id__delete",
+        "parameters": [
+          {
+            "name": "message_record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Message Record Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/photos/upload": {
       "post": {
         "tags": [
@@ -3350,6 +3529,75 @@
           "user_id"
         ],
         "title": "VoucherCreate"
+      },
+      "VoucherMessageCreate": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "voucher_code": {
+            "type": "string",
+            "title": "Voucher Code"
+          },
+          "message_id": {
+            "type": "integer",
+            "title": "Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "voucher_code",
+          "message_id"
+        ],
+        "title": "VoucherMessageCreate"
+      },
+      "VoucherMessageOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "voucher_code": {
+            "type": "string",
+            "title": "Voucher Code"
+          },
+          "message_id": {
+            "type": "integer",
+            "title": "Message Id"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sent At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "voucher_code",
+          "message_id",
+          "sent_at"
+        ],
+        "title": "VoucherMessageOut"
       },
       "VoucherOut": {
         "properties": {
