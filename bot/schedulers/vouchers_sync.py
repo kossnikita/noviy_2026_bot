@@ -91,7 +91,6 @@ async def run_voucher_sync(
                 for entry in codes:
                     code = str(entry.get("code") or "").strip()
                     msg_id = int(entry.get("message_id") or 0)
-                    issued_use_count = int(entry.get("use_count") or 0)
 
                     if not code or msg_id <= 0:
                         log.debug(f"Invalid code or msg_id in entry: {entry}")
@@ -105,7 +104,9 @@ async def run_voucher_sync(
                         voucher_list = api.get_json(
                             f"/slot/voucher?code={code}&user_id={user_id}"
                         )
-                        log.debug(f"Voucher lookup for code {code} user {user_id}: {voucher_list}")
+                        log.debug(
+                            f"Voucher lookup for code {code} user {user_id}: {voucher_list}"
+                        )
                     except ApiError as lookup_err:
                         # API error (timeout/401/500) — do NOT drop entry, keep it.
                         log.warning(
@@ -117,12 +118,17 @@ async def run_voucher_sync(
                     # If the list is empty, voucher no longer exists — drop entry.
                     if not voucher_list:
                         log.info(
-                            f"Voucher {code} not found (empty list), dropping entry for user {user_id}"
+                            f"Voucher {code} not found (empty list), "
+                            f"dropping entry for user {user_id}"
                         )
                         continue
 
                     # Take the first matching voucher from the list.
-                    v = voucher_list[0] if isinstance(voucher_list, list) else None
+                    v = (
+                        voucher_list[0]
+                        if isinstance(voucher_list, list)
+                        else None
+                    )
                     if v is None:
                         log.info(
                             f"Voucher {code} disappeared, dropping entry for user {user_id}"
@@ -130,9 +136,13 @@ async def run_voucher_sync(
                         continue
 
                     use_count = int((v or {}).get("use_count") or 0)
-                    if use_count > issued_use_count:
+                    total_games = int((v or {}).get("total_games") or 1)
+                    # Voucher is exhausted when use_count >= total_games
+                    if use_count >= total_games:
                         log.info(
-                            f"Voucher {code} used (use_count={use_count} > issued={issued_use_count}), deleting message {msg_id} for user {user_id}"
+                            f"Voucher {code} exhausted "
+                            f"(use_count={use_count} >= total_games={total_games}), "
+                            f"deleting message {msg_id} for user {user_id}"
                         )
                         try:
                             await bot.delete_message(
@@ -203,8 +213,6 @@ async def run_voucher_sync(
                         log.warning(f"Voucher missing code: {v}")
                         continue
 
-                    use_count = int((v or {}).get("use_count") or 0)
-
                     state_key = f"{_VOUCHER_STATE_KEY_PREFIX}{user_id}"
                     prev = _decode_state(settings.get(state_key))
                     log.debug(f"Decoded prev state for {state_key}: {prev}")
@@ -213,7 +221,9 @@ async def run_voucher_sync(
                         for entry in prev.get("codes"):
                             try:
                                 prev_codes.add(
-                                    str((entry or {}).get("code") or "").strip()
+                                    str(
+                                        (entry or {}).get("code") or ""
+                                    ).strip()
                                 )
                             except Exception:
                                 continue
@@ -247,10 +257,10 @@ async def run_voucher_sync(
 
                     try:
                         # Merge new entry into existing state.codes
+                        # Note: we don't store use_count, we fetch it from API when needed
                         new_entry = {
                             "code": code,
                             "message_id": int(sent.message_id),
-                            "use_count": use_count,
                         }
                         merged = {"codes": []}
                         if prev and isinstance(prev.get("codes"), list):
@@ -269,7 +279,8 @@ async def run_voucher_sync(
                         )
                     except Exception as e:
                         log.warning(
-                            f"Failed to persist voucher state: user_id={user_id} code={code} err={e}"
+                            f"Failed to persist voucher state: "
+                            f"user_id={user_id} code={code} err={e}"
                         )
 
                 if len(items) < v_limit:

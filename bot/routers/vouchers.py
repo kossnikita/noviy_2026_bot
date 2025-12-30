@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import logging
 from io import BytesIO
 from typing import Any
 
 import qrcode
-
 
 
 _VOUCHER_STATE_KEY_PREFIX = "voucher_dm_"
@@ -16,15 +14,13 @@ def _state_key(user_id: int) -> str:
     return f"{_VOUCHER_STATE_KEY_PREFIX}{int(user_id)}"
 
 
-def _encode_state(*, code: str, message_id: int, use_count: int) -> str:
-    # Store state as a list of codes to support multiple vouchers per user.
+def _encode_state(*, code: str, message_id: int) -> str:
     return json.dumps(
         {
             "codes": [
                 {
                     "code": str(code),
                     "message_id": int(message_id),
-                    "use_count": int(use_count),
                 }
             ]
         },
@@ -41,21 +37,35 @@ def _decode_state(raw: str | None) -> dict[str, Any] | None:
         if not isinstance(v, dict):
             return None
 
-        # Backwards compatibility: previously state was a flat object with
-        # keys `code`, `message_id`, `use_count`. Convert that into the
-        # new shape with a `codes` list.
         if "codes" in v and isinstance(v["codes"], list):
-            return v
+            # Normalize: ensure each code entry has at least code and message_id
+            normalized_codes = []
+            for entry in v["codes"]:
+                code_str = str((entry or {}).get("code") or "").strip()
+                msg_id = int((entry or {}).get("message_id") or 0)
+                if code_str and msg_id > 0:
+                    normalized_codes.append(
+                        {
+                            "code": code_str,
+                            "message_id": msg_id,
+                        }
+                    )
+            if normalized_codes:
+                return {"codes": normalized_codes}
+            return None
+
         if "code" in v:
-            return {
-                "codes": [
-                    {
-                        "code": str(v.get("code") or ""),
-                        "message_id": int(v.get("message_id") or 0),
-                        "use_count": int(v.get("use_count") or 0),
-                    }
-                ]
-            }
+            code_str = str(v.get("code") or "").strip()
+            msg_id = int(v.get("message_id") or 0)
+            if code_str and msg_id > 0:
+                return {
+                    "codes": [
+                        {
+                            "code": code_str,
+                            "message_id": msg_id,
+                        }
+                    ]
+                }
 
         # Unknown shape
         return None
@@ -66,5 +76,5 @@ def _decode_state(raw: str | None) -> dict[str, Any] | None:
 def _make_qr_png_bytes(data: str) -> bytes:
     img = qrcode.make(data)
     buf = BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, "PNG")
     return buf.getvalue()
