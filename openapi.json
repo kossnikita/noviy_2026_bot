@@ -458,6 +458,38 @@
               "default": 0,
               "title": "Active Only"
             }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
           }
         ],
         "responses": {
@@ -528,65 +560,71 @@
         }
       }
     },
-    "/slot/voucher/by-user/{user_id}": {
-      "get": {
+    "/slot/voucher/{voucher_id}/count": {
+      "put": {
         "tags": [
           "slot",
           "voucher"
         ],
-        "summary": "Get Or Create Voucher By User",
-        "operationId": "get_or_create_voucher_by_user_slot_voucher_by_user__user_id__get",
+        "summary": "Set Voucher Count",
+        "description": "Modify the total games count of a voucher.\nQuery parameters:\n- add: increment total_games by this amount\n- decrease: decrement total_games by this amount\n- set: set total_games to this exact value\nReturns 404 if voucher not found.",
+        "operationId": "set_voucher_count_slot_voucher__voucher_id__count_put",
         "parameters": [
           {
-            "name": "user_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "User Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VoucherOut"
-                }
-              }
+              "title": "Voucher Id"
             }
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/slot/voucher/by-code/{code}": {
-      "get": {
-        "tags": [
-          "slot",
-          "voucher"
-        ],
-        "summary": "Get Voucher By Code",
-        "operationId": "get_voucher_by_code_slot_voucher_by_code__code__get",
-        "parameters": [
           {
-            "name": "code",
-            "in": "path",
-            "required": true,
+            "name": "add",
+            "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
-              "title": "Code"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Add"
+            }
+          },
+          {
+            "name": "decrease",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decrease"
+            }
+          },
+          {
+            "name": "set",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Set"
             }
           }
         ],

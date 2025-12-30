@@ -94,6 +94,8 @@ def list_vouchers(
     limit: int = 200,
     offset: int = 0,
     active_only: int = 0,
+    user_id: int | None = None,
+    code: str | None = None,
 ) -> list[VoucherOut]:
     with request.app.state.db.session() as s:
         stmt = (
@@ -105,6 +107,10 @@ def list_vouchers(
         if int(active_only) == 1:
             # Only return vouchers with remaining games
             stmt = stmt.where(Voucher.use_count < Voucher.total_games)
+        if user_id is not None:
+            stmt = stmt.where(Voucher.user_id == int(user_id))
+        if code is not None:
+            stmt = stmt.where(Voucher.code == code.strip())
         return [VoucherOut.model_validate(v) for v in s.scalars(stmt).all()]
 
 
@@ -121,31 +127,36 @@ def create_voucher(payload: VoucherCreate, request: Request) -> VoucherOut:
     return VoucherOut.model_validate(v)
 
 
-@router.get("/by-user/{user_id}", response_model=VoucherOut)
-def get_or_create_voucher_by_user(
-    user_id: int, request: Request
+@router.put("/{voucher_id}/count", response_model=VoucherOut)
+def set_voucher_count(
+    voucher_id: int,
+    request: Request,
+    add: int | None = None,
+    decrease: int | None = None,
+    set: int | None = None,
 ) -> VoucherOut:
-    v = _issue_voucher_for_user(request, int(user_id), None, total_games=1)
-    return VoucherOut.model_validate(v)
-
-
-@router.get("/by-code/{code}", response_model=VoucherOut)
-def get_voucher_by_code(code: str, request: Request) -> VoucherOut:
-    key = (code or "").strip()
-    if not key:
-        raise HTTPException(status_code=422, detail="code is required")
-
+    """
+    Modify the total games count of a voucher.
+    Query parameters:
+    - add: increment total_games by this amount
+    - decrease: decrement total_games by this amount
+    - set: set total_games to this exact value
+    Returns 404 if voucher not found.
+    """
     with request.app.state.db.session() as s:
-        v = s.scalar(
-            select(Voucher)
-            .where(Voucher.code == key)
-            .where(Voucher.use_count < Voucher.total_games)
-        )
+        v = s.scalar(select(Voucher).where(Voucher.id == int(voucher_id)))
         if v is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Voucher not found or has no remaining games",
-            )
+            raise HTTPException(status_code=404, detail="Voucher not found")
+
+        if add is not None:
+            v.total_games += int(add)
+        elif decrease is not None:
+            v.total_games -= int(decrease)
+        elif set is not None:
+            v.total_games = int(set)
+
+        s.commit()
+        s.refresh(v)
         return VoucherOut.model_validate(v)
 
 
