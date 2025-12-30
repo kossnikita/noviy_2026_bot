@@ -207,7 +207,7 @@ def test_exhausted_voucher_code_reuse():
 
 
 def test_play_game_via_deprecated_endpoint():
-    """Test the deprecated /vouchers/used endpoint for backwards compatibility"""
+    """Test that deprecated /vouchers/used endpoint is no longer usable"""
     c = _client()
 
     r = c.post("/slot/voucher", json={"user_id": 700, "total_games": 2})
@@ -216,21 +216,7 @@ def test_play_game_via_deprecated_endpoint():
 
     # Use deprecated endpoint
     r2 = c.post("/slot/voucher/used", json={"code": code})
-    assert r2.status_code == 200
-    v2 = r2.json()
-    assert int(v2["use_count"]) == 1
-    assert int(v2["remaining_games"]) == 1
-
-    # Use again
-    r3 = c.post("/slot/voucher/used", json={"code": code})
-    assert r3.status_code == 200
-    v3 = r3.json()
-    assert int(v3["use_count"]) == 2
-    assert int(v3["remaining_games"]) == 0
-
-    # Try once more - should fail
-    r4 = c.post("/slot/voucher/used", json={"code": code})
-    assert r4.status_code == 400
+    assert r2.status_code == 410
 
 
 def test_create_voucher_default_total_games():

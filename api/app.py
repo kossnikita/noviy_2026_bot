@@ -526,8 +526,8 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             if ctrl.index is None:
                                 ctrl.index = 0
                             else:
-                                ctrl.index = min(
-                                    ctrl.index + 1, len(ctrl.playlist) - 1
+                                ctrl.index = (ctrl.index + 1) % len(
+                                    ctrl.playlist
                                 )
                         await _broadcast_player_state(ctrl, bump=True)
                         continue
@@ -537,7 +537,9 @@ def create_app(*, db: Db | None = None) -> FastAPI:
                             if ctrl.index is None:
                                 ctrl.index = 0
                             else:
-                                ctrl.index = max(ctrl.index - 1, 0)
+                                ctrl.index = (ctrl.index - 1) % len(
+                                    ctrl.playlist
+                                )
                         await _broadcast_player_state(ctrl, bump=True)
                         continue
 
@@ -674,16 +676,16 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             if ctrl.index is not None and ctrl.index >= len(ctrl.playlist):
                 ctrl.index = 0 if ctrl.playlist else None
 
-            # Sync to Spotify
-            playlist_id = await _sync_spotify_playlist(ctrl)
+        # Sync to Spotify outside the lock to avoid deadlocks.
+        playlist_id = await _sync_spotify_playlist(ctrl)
 
-            await _broadcast_player_state(ctrl, bump=True)
+        await _broadcast_player_state(ctrl, bump=True)
 
-            return {
-                **_player_state_payload(ctrl),
-                "spotify_playlist_id": playlist_id,
-                "synced": playlist_id is not None,
-            }
+        return {
+            **_player_state_payload(ctrl),
+            "spotify_playlist_id": playlist_id,
+            "synced": playlist_id is not None,
+        }
 
     @contextmanager
     def _session() -> Generator[Session, None, None]:

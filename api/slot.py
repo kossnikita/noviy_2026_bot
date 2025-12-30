@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from api.db_sa import Prize, PrizeWin
 from api.schemas import (
@@ -204,5 +205,11 @@ def delete_prize(name: str, request: Request) -> DeletedOut:
         if p is None:
             return DeletedOut(deleted=0)
         s.delete(p)
-        s.commit()
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            raise HTTPException(
+                status_code=409, detail="Prize has existing wins"
+            )
         return DeletedOut(deleted=1)

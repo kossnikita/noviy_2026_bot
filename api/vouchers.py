@@ -18,12 +18,22 @@ def _generate_code() -> str:
     return f"{random.randint(0, 9999):04d}"
 
 
+def _validate_total_games(total_games: int) -> int:
+    v = int(total_games)
+    if v < 1:
+        raise HTTPException(
+            status_code=422, detail="total_games must be >= 1"
+        )
+    return v
+
+
 def _issue_voucher_for_user(
     request: Request,
     user_id: int,
     issued_by: int | None = None,
     total_games: int = 1,
 ) -> Voucher:
+    total_games = _validate_total_games(total_games)
     with request.app.state.db.session() as s:
         # First, try to find an available voucher with remaining games (user_id is NULL and remaining games > 0)
         available_with_games = s.scalar(
@@ -122,7 +132,7 @@ def create_voucher(payload: VoucherCreate, request: Request) -> VoucherOut:
         request,
         int(payload.user_id),
         int(payload.issued_by) if payload.issued_by is not None else None,
-        int(payload.total_games),
+        _validate_total_games(payload.total_games),
     )
     return VoucherOut.model_validate(v)
 
@@ -148,12 +158,25 @@ def set_voucher_count(
         if v is None:
             raise HTTPException(status_code=404, detail="Voucher not found")
 
+        if add is None and decrease is None and set is None:
+            raise HTTPException(
+                status_code=422, detail="No count update provided"
+            )
+
+        new_total = int(v.total_games)
         if add is not None:
-            v.total_games += int(add)
+            new_total += int(add)
         elif decrease is not None:
-            v.total_games -= int(decrease)
+            new_total -= int(decrease)
         elif set is not None:
-            v.total_games = int(set)
+            new_total = int(set)
+
+        if new_total < 1:
+            raise HTTPException(
+                status_code=422, detail="total_games must be >= 1"
+            )
+
+        v.total_games = new_total
 
         s.commit()
         s.refresh(v)
@@ -192,6 +215,10 @@ def mark_voucher_used(payload: VoucherUse, request: Request) -> VoucherOut:
     DEPRECATED: Use PUT /{voucher_id}/play instead.
     This endpoint is kept for backwards compatibility.
     """
+    raise HTTPException(
+        status_code=410, detail="Deprecated: use PUT /{voucher_id}/play"
+    )
+
     code = (payload.code or "").strip()
     if not code:
         raise HTTPException(status_code=422, detail="code is required")
