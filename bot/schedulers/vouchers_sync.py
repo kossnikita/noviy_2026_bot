@@ -137,6 +137,12 @@ async def run_voucher_sync(
 
                     use_count = int((v or {}).get("use_count") or 0)
                     total_games = int((v or {}).get("total_games") or 1)
+
+                    log.debug(
+                        f"Voucher {code}: use_count={use_count}, "
+                        f"total_games={total_games}, remaining={total_games - use_count}"
+                    )
+
                     # Voucher is exhausted when use_count >= total_games
                     if use_count >= total_games:
                         log.info(
@@ -147,6 +153,9 @@ async def run_voucher_sync(
                         try:
                             await bot.delete_message(
                                 chat_id=user_id, message_id=msg_id
+                            )
+                            log.info(
+                                f"Successfully deleted message {msg_id} for user {user_id}"
                             )
                         except Exception as e:
                             log.warning(
@@ -203,7 +212,11 @@ async def run_voucher_sync(
 
                 for v in items:
                     try:
-                        user_id = int((v or {}).get("user_id"))
+                        user_id_val = (v or {}).get("user_id")
+                        if user_id_val is None:
+                            log.warning(f"Invalid user_id in voucher: {v}")
+                            continue
+                        user_id = int(user_id_val)
                     except Exception:
                         log.warning(f"Invalid user_id in voucher: {v}")
                         continue
@@ -218,15 +231,17 @@ async def run_voucher_sync(
                     log.debug(f"Decoded prev state for {state_key}: {prev}")
                     prev_codes = set()
                     if prev and isinstance(prev.get("codes"), list):
-                        for entry in prev.get("codes"):
-                            try:
-                                prev_codes.add(
-                                    str(
-                                        (entry or {}).get("code") or ""
-                                    ).strip()
-                                )
-                            except Exception:
-                                continue
+                        codes_list = prev.get("codes")
+                        if codes_list:
+                            for entry in codes_list:
+                                try:
+                                    prev_codes.add(
+                                        str(
+                                            (entry or {}).get("code") or ""
+                                        ).strip()
+                                    )
+                                except Exception:
+                                    continue
 
                     # "New voucher appeared" = code not previously sent to this user.
                     if code in prev_codes:
@@ -264,7 +279,9 @@ async def run_voucher_sync(
                         }
                         merged = {"codes": []}
                         if prev and isinstance(prev.get("codes"), list):
-                            merged["codes"].extend(prev.get("codes"))
+                            prev_codes_list = prev.get("codes")
+                            if prev_codes_list:
+                                merged["codes"].extend(prev_codes_list)
                         merged["codes"].append(new_entry)
                         settings.set(
                             state_key,
