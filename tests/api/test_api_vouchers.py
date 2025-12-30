@@ -29,7 +29,8 @@ def test_create_voucher_with_total_games():
     c = _client()
 
     r = c.post(
-           "/slot/voucher", json={"user_id": 999, "issued_by": 777, "total_games": 5}
+        "/slot/voucher",
+        json={"user_id": 999, "issued_by": 777, "total_games": 5},
     )
     assert r.status_code == 201
     v = r.json()
@@ -94,8 +95,8 @@ def test_play_game_when_exhausted_returns_error():
     assert "no remaining games" in r_fail.json()["detail"].lower()
 
 
-def test_get_voucher_with_no_remaining_games_returns_404():
-    """Test that GET on exhausted voucher returns 404"""
+def test_get_voucher_with_no_remaining_games_in_list():
+    """Test that exhausted vouchers appear in list but not when using active_only"""
     c = _client()
 
     r = c.post("/slot/voucher", json={"user_id": 300, "total_games": 1})
@@ -107,10 +108,16 @@ def test_get_voucher_with_no_remaining_games_returns_404():
     # Exhaust the voucher
     c.put(f"/slot/voucher/{voucher_id}/play")
 
-    # Try to GET by code - should return 404
-    r_get = c.get(f"/slot/voucher/by-code/{code}")
-    assert r_get.status_code == 404
-    assert "no remaining games" in r_get.json()["detail"].lower()
+    # GET by code - should still return exhausted voucher in regular list
+    r_get = c.get(f"/slot/voucher?code={code}")
+    assert r_get.status_code == 200
+    assert len(r_get.json()) == 1
+    assert r_get.json()[0]["id"] == voucher_id
+
+    # But not in active_only list
+    r_active = c.get(f"/slot/voucher?code={code}&active_only=1")
+    assert r_active.status_code == 200
+    assert len(r_active.json()) == 0
 
 
 def test_list_vouchers_filters_by_remaining_games():
@@ -237,38 +244,47 @@ def test_create_voucher_default_total_games():
     assert int(v["remaining_games"]) == 1
 
 
-def test_voucher_reuse_logic_priority():
-    """Test the priority of voucher code reuse: prefer non-exhausted over exhausted"""
+def test_list_vouchers_by_user_id():
+    """Test listing vouchers filtered by user_id"""
     c = _client()
 
-    # This test requires manipulating DB directly to set user_id to NULL
-    # which simulates released vouchers
-    # For now, let's test via the get_or_create_voucher_by_user endpoint
-
     # Create initial voucher for user 901
-    r1 = c.get("/slot/voucher/by-user/901")
-    assert r1.status_code == 200
+    r1 = c.post("/slot/voucher", json={"user_id": 901, "total_games": 2})
+    assert r1.status_code == 201
     v1 = r1.json()
-    assert int(v1["user_id"]) == 901
-    assert int(v1["total_games"]) == 1
+    v1_id = v1["id"]
 
     # Create another for user 902
-    r2 = c.get("/slot/voucher/by-user/902")
-    assert r2.status_code == 200
+    r2 = c.post("/slot/voucher", json={"user_id": 902, "total_games": 3})
+    assert r2.status_code == 201
     v2 = r2.json()
-    assert int(v2["user_id"]) == 902
-    # Codes should be different since we're creating new ones
+    v2_id = v2["id"]
+
+    # List vouchers for user 901
+    r_list = c.get("/slot/voucher?user_id=901")
+    assert r_list.status_code == 200
+    vouchers = r_list.json()
+    assert len(vouchers) >= 1
+    assert v1_id in [v["id"] for v in vouchers]
+    # Codes should be different
     assert v2["code"] != v1["code"]
 
 
-def test_get_or_create_by_user_creates_with_one_game():
-    """Test that get_or_create_voucher_by_user creates voucher with 1 game"""
+def test_create_voucher_and_filter_by_user():
+    """Test creating a voucher and filtering list by user_id"""
     c = _client()
 
-    r = c.get("/slot/voucher/by-user/1000")
-    assert r.status_code == 200
+    r = c.post("/slot/voucher", json={"user_id": 1000})
+    assert r.status_code == 201
     v = r.json()
     assert int(v["user_id"]) == 1000
     assert int(v["total_games"]) == 1
     assert int(v["use_count"]) == 0
     assert int(v["remaining_games"]) == 1
+
+    # Verify we can find it by filtering
+    r_list = c.get("/slot/voucher?user_id=1000")
+    assert r_list.status_code == 200
+    vouchers = r_list.json()
+    assert len(vouchers) >= 1
+    assert int(vouchers[0]["user_id"]) == 1000
