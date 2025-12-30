@@ -1080,10 +1080,10 @@
         }
       }
     },
-    "/player/shuffle": {
+    "/player/playlist": {
       "post": {
-        "summary": "Player Shuffle",
-        "operationId": "player_shuffle_player_shuffle_post",
+        "summary": "Player Create Playlist",
+        "operationId": "player_create_playlist_player_playlist_post",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1092,7 +1092,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Player Shuffle Player Shuffle Post"
+                  "title": "Response Player Create Playlist Player Playlist Post"
                 }
               }
             }

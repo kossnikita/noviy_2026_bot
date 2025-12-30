@@ -59,8 +59,8 @@ class Plugin:
                 ],
                 [
                     InlineKeyboardButton(
-                        text="🔀 Перемешать",
-                        callback_data=_PLAYER_CMD_CB_PREFIX + "shuffle",
+                        text="🔀 Создать плейлист",
+                        callback_data=_PLAYER_CMD_CB_PREFIX + "playlist",
                     ),
                 ],
             ]
@@ -105,8 +105,8 @@ class Plugin:
                     ],
                     [
                         InlineKeyboardButton(
-                            text="🔀 Перемешать",
-                            callback_data=_PLAYER_CMD_CB_PREFIX + "shuffle",
+                            text="🔀 Создать плейлист",
+                            callback_data=_PLAYER_CMD_CB_PREFIX + "playlist",
                         ),
                     ],
                 ]
@@ -141,8 +141,8 @@ class Plugin:
                     ],
                     [
                         InlineKeyboardButton(
-                            text="🔀 Перемешать",
-                            callback_data=_PLAYER_CMD_CB_PREFIX + "shuffle",
+                            text="🔀 Создать плейлист",
+                            callback_data=_PLAYER_CMD_CB_PREFIX + "playlist",
                         ),
                     ],
                 ]

@@ -605,13 +605,13 @@ def create_app(*, db: Db | None = None) -> FastAPI:
             await _broadcast_player_state(ctrl, bump=True)
             return _player_state_payload(ctrl)
 
-    @app.post("/player/shuffle")
-    async def player_shuffle(request: Request) -> dict:
+    @app.post("/player/playlist")
+    async def player_create_playlist(request: Request) -> dict:
         ctrl: _PlayerController = app.state.player
         async with ctrl.lock:
             if ctrl.playlist:
                 random.shuffle(ctrl.playlist)
-                ctrl.index = 0 if ctrl.playlist else None
+                ctrl.index = 0
 
             # Sync shuffled playlist to Spotify in background (don't block response)
             asyncio.create_task(_sync_spotify_playlist(ctrl))
