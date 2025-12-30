@@ -26,6 +26,7 @@ async def test_voucher_sync_deletes_message_with_revoke_true(
                 "id": 123,
                 "user_id": 456,
                 "voucher_code": "ABC123",
+                "message_id": 1000,
                 "sent_at": "2025-12-31T10:00:00",
                 "deleted_at": None,
             }
@@ -69,7 +70,7 @@ async def test_voucher_sync_deletes_message_with_revoke_true(
     bot.delete_message.assert_called_once()
     call_kwargs = bot.delete_message.call_args.kwargs
     assert call_kwargs["chat_id"] == 456
-    assert call_kwargs["message_id"] == 123
+    assert call_kwargs["message_id"] == 1000
     assert call_kwargs["revoke"] is True
 
 
@@ -90,6 +91,7 @@ async def test_voucher_sync_marks_message_deleted_on_exhaustion(
                 "id": 456,
                 "user_id": 789,
                 "voucher_code": "XYZ789",
+                "message_id": 2000,
                 "sent_at": "2025-12-31T11:00:00",
                 "deleted_at": None,
             }
@@ -146,6 +148,7 @@ async def test_voucher_sync_handles_telegram_deletion_error_gracefully(
                 "id": 111,
                 "user_id": 222,
                 "voucher_code": "DEL111",
+                "message_id": 3000,
                 "sent_at": "2025-12-31T12:00:00",
                 "deleted_at": None,
             }
@@ -207,6 +210,7 @@ async def test_voucher_sync_skips_messages_not_exhausted(
                 "id": 999,
                 "user_id": 888,
                 "voucher_code": "ACTIVE",
+                "message_id": 4000,
                 "sent_at": "2025-12-31T13:00:00",
                 "deleted_at": None,
             }

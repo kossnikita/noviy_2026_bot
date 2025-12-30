@@ -33,13 +33,19 @@ async def run_voucher_sync(
 
             for msg_record in messages_to_check or []:
                 try:
-                    msg_id = int((msg_record or {}).get("id") or 0)
+                    db_record_id = int((msg_record or {}).get("id") or 0)
                     user_id = int((msg_record or {}).get("user_id") or 0)
+                    message_id = int((msg_record or {}).get("message_id") or 0)
                     voucher_code = str(
                         (msg_record or {}).get("voucher_code") or ""
                     ).strip()
 
-                    if not msg_id or not user_id or not voucher_code:
+                    if (
+                        not db_record_id
+                        or not user_id
+                        or not voucher_code
+                        or not message_id
+                    ):
                         log.debug(f"Invalid message record: {msg_record}")
                         continue
 
@@ -58,10 +64,12 @@ async def run_voucher_sync(
                         # Voucher no longer exists - mark message as deleted in DB
                         log.info(
                             f"Voucher {voucher_code} not found, marking "
-                            f"message {msg_id} as deleted for user {user_id}"
+                            f"message {message_id} as deleted for user {user_id}"
                         )
                         try:
-                            api.delete(f"/slot/voucher-messages/{msg_id}")
+                            api.delete(
+                                f"/slot/voucher-messages/{db_record_id}"
+                            )
                         except ApiError as e:
                             log.warning(
                                 f"Failed to mark message {msg_id} as deleted: {e}"
@@ -76,10 +84,12 @@ async def run_voucher_sync(
                     if v is None:
                         log.info(
                             f"Voucher {voucher_code} disappeared, marking "
-                            f"message {msg_id} as deleted"
+                            f"message {message_id} as deleted"
                         )
                         try:
-                            api.delete(f"/slot/voucher-messages/{msg_id}")
+                            api.delete(
+                                f"/slot/voucher-messages/{db_record_id}"
+                            )
                         except ApiError as e:
                             log.warning(
                                 f"Failed to mark message {msg_id} as deleted: {e}"
@@ -99,25 +109,29 @@ async def run_voucher_sync(
                         log.info(
                             f"Voucher {voucher_code} exhausted "
                             f"(use_count={use_count} >= total_games={total_games}), "
-                            f"deleting Telegram message {msg_id} for user {user_id}"
+                            f"deleting Telegram message {message_id} for user {user_id}"
                         )
                         try:
                             await bot.delete_message(
-                                chat_id=user_id, message_id=msg_id, revoke=True
+                                chat_id=user_id,
+                                message_id=message_id,
+                                revoke=True,
                             )
                             log.info(
                                 f"Successfully deleted Telegram message "
-                                f"{msg_id} for user {user_id}"
+                                f"{message_id} for user {user_id}"
                             )
                         except Exception as e:
                             log.warning(
                                 f"Failed to delete Telegram message "
-                                f"{msg_id} for user {user_id}: {e}"
+                                f"{message_id} for user {user_id}: {e}"
                             )
 
                         # Mark in API DB as deleted
                         try:
-                            api.delete(f"/slot/voucher-messages/{msg_id}")
+                            api.delete(
+                                f"/slot/voucher-messages/{db_record_id}"
+                            )
                         except ApiError as e:
                             log.warning(
                                 f"Failed to mark DB record {msg_id} as deleted: {e}"
@@ -183,7 +197,8 @@ async def run_voucher_sync(
 
                         # Record the message in API DB
                         try:
-                            api.post_json(
+                            await asyncio.to_thread(
+                                api.post_json,
                                 "/slot/voucher-messages",
                                 {
                                     "user_id": int(user_id),
