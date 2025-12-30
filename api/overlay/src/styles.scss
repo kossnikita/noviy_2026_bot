@@ -57,9 +57,7 @@ body {
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(1200px 600px at 15% 20%, rgba(255, 255, 255, 0.12), transparent 60%),
-        radial-gradient(900px 500px at 85% 70%, rgba(255, 255, 255, 0.10), transparent 60%),
-        linear-gradient(120deg, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.25));
+        color(a(1));
 }
 
 .layer {
