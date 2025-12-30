@@ -12,7 +12,6 @@ from bot.api_repos import ApiError, SettingsRepo, _Api
 from bot.routers.vouchers import (
     _VOUCHER_STATE_KEY_PREFIX,
     _decode_state,
-    _encode_state,
     _make_qr_png_bytes,
 )
 
@@ -98,10 +97,33 @@ async def run_voucher_sync(
                         log.debug(f"Invalid code or msg_id in entry: {entry}")
                         continue
 
+                    # Lookup voucher by code AND user_id using the list endpoint.
+                    # We filter by user_id to avoid confusion if the voucher was reissued
+                    # to a different user after being exhausted.
+                    # On transient API errors we keep the entry to avoid spam on outages.
                     try:
-                        v = api.get_json(f"/slot/voucher/by-code/{code}")
-                        log.debug(f"Voucher by code {code}: {v}")
-                    except ApiError:
+                        voucher_list = api.get_json(
+                            f"/slot/voucher?code={code}&user_id={user_id}"
+                        )
+                        log.debug(f"Voucher lookup for code {code} user {user_id}: {voucher_list}")
+                    except ApiError as lookup_err:
+                        # API error (timeout/401/500) — do NOT drop entry, keep it.
+                        log.warning(
+                            f"API error looking up voucher {code}, keeping entry: {lookup_err}"
+                        )
+                        remaining.append(entry)
+                        continue
+
+                    # If the list is empty, voucher no longer exists — drop entry.
+                    if not voucher_list:
+                        log.info(
+                            f"Voucher {code} not found (empty list), dropping entry for user {user_id}"
+                        )
+                        continue
+
+                    # Take the first matching voucher from the list.
+                    v = voucher_list[0] if isinstance(voucher_list, list) else None
+                    if v is None:
                         log.info(
                             f"Voucher {code} disappeared, dropping entry for user {user_id}"
                         )
@@ -188,10 +210,10 @@ async def run_voucher_sync(
                     log.debug(f"Decoded prev state for {state_key}: {prev}")
                     prev_codes = set()
                     if prev and isinstance(prev.get("codes"), list):
-                        for e in prev.get("codes"):
+                        for entry in prev.get("codes"):
                             try:
                                 prev_codes.add(
-                                    str((e or {}).get("code") or "").strip()
+                                    str((entry or {}).get("code") or "").strip()
                                 )
                             except Exception:
                                 continue
