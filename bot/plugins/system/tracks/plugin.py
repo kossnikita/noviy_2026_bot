@@ -27,6 +27,9 @@ from bot.integrations.spotify_client import SpotifyClient
 from bot.plugins.system.tracks.tracks_closure import (
     run_tracks_closure_scheduler,
 )
+from bot.plugins.system.tracks.tracks_duration_check import (
+    run_tracks_duration_check_scheduler,
+)
 
 
 _LOG = logging.getLogger("tracks")
@@ -143,6 +146,7 @@ class Plugin:
         self._admin_id = int(cfg.admin_id)
 
         self._scheduler_task: asyncio.Task[None] | None = None
+        self._duration_check_task: asyncio.Task[None] | None = None
 
         self._state_timeout_tasks: dict[
             tuple[int, int], asyncio.Task[None]
@@ -187,9 +191,16 @@ class Plugin:
         ):
             return self._scheduler_task
 
-        self._scheduler_task = asyncio.create_task(
-            run_tracks_closure_scheduler(bot, self._settings, self._chats)
-        )
+        async def _run_all_schedulers() -> None:
+            """Run all tracks-related schedulers concurrently."""
+            await asyncio.gather(
+                run_tracks_closure_scheduler(bot, self._settings, self._chats),
+                run_tracks_duration_check_scheduler(
+                    bot, self._tracks, self._spotify
+                ),
+            )
+
+        self._scheduler_task = asyncio.create_task(_run_all_schedulers())
         return self._scheduler_task
 
     def register_user(self, router: Router) -> None:

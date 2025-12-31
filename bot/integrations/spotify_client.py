@@ -13,6 +13,7 @@ class SpotifyTrack:
     name: str
     artist: str
     url: Optional[str]
+    duration_ms: int = 0
 
 
 class SpotifyClient:
@@ -86,7 +87,9 @@ class SpotifyClient:
         ext = data.get("external_urls") or {}
         if isinstance(ext, dict):
             url = ext.get("spotify")
-        return SpotifyTrack(spotify_id=spotify_id, name=name, artist=artist, url=url)
+        return SpotifyTrack(
+            spotify_id=spotify_id, name=name, artist=artist, url=url
+        )
 
     def search_track(self, query: str) -> Optional[SpotifyTrack]:
         q = (query or "").strip()
@@ -100,7 +103,7 @@ class SpotifyClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        tracks = (((data.get("tracks") or {}).get("items")) or [])
+        tracks = ((data.get("tracks") or {}).get("items")) or []
         if not tracks:
             return None
         t0 = tracks[0]
@@ -114,4 +117,6 @@ class SpotifyClient:
             url = ext.get("spotify")
         if not spotify_id:
             return None
-        return SpotifyTrack(spotify_id=spotify_id, name=name, artist=artist, url=url)
+        return SpotifyTrack(
+            spotify_id=spotify_id, name=name, artist=artist, url=url
+        )

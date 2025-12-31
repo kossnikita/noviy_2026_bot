@@ -293,20 +293,52 @@ class PhotosRepo:
                     "POST",
                     url,
                     data={"added_by": str(int(added_by))},
-                    files={"file": (str(filename), f, "application/octet-stream")},
+                    files={
+                        "file": (str(filename), f, "application/octet-stream")
+                    },
                     timeout=self._api.settings.timeout_s,
                 )
         except Exception as e:
             raise ApiError(f"API upload photo failed: POST {url}: {e}") from e
 
         if resp.status_code >= 400:
-            raise ApiError(f"API upload photo failed: {resp.status_code} {resp.text}")
+            raise ApiError(
+                f"API upload photo failed: {resp.status_code} {resp.text}"
+            )
         return resp.json() if resp.content else {}
 
 
 class SpotifyTracksRepo:
     def __init__(self, api: _Api):
         self._api = api
+
+    def list_all(self, limit: int = 10000):
+        """Get all tracks from the database."""
+        items = self._api.get_json(
+            f"/spotify-tracks?limit={int(limit)}&offset=0"
+        )
+        out = []
+        for it in items or []:
+            out.append(
+                {
+                    "id": it.get("id"),
+                    "spotify_id": it.get("spotify_id"),
+                    "name": it.get("name"),
+                    "artist": it.get("artist"),
+                    "url": it.get("url"),
+                    "added_by": it.get("added_by"),
+                    "added_at": it.get("added_at"),
+                }
+            )
+        return out
+
+    def delete_by_id(self, track_id: int) -> None:
+        """Delete a track by its database ID."""
+        r = self._api._request("DELETE", f"/spotify-tracks/{track_id}")
+        if r.status_code >= 400 and r.status_code != 404:
+            raise ApiError(
+                f"API delete track by id failed: {r.status_code} {r.text}"
+            )
 
     def count_by_user(self, user_id: int) -> int:
         r = self._api._request(
