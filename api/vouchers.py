@@ -21,9 +21,7 @@ def _generate_code() -> str:
 def _validate_total_games(total_games: int) -> int:
     v = int(total_games)
     if v < 1:
-        raise HTTPException(
-            status_code=422, detail="total_games must be >= 1"
-        )
+        raise HTTPException(status_code=422, detail="total_games must be >= 1")
     return v
 
 
@@ -35,7 +33,26 @@ def _issue_voucher_for_user(
 ) -> Voucher:
     total_games = _validate_total_games(total_games)
     with request.app.state.db.session() as s:
-        # First, try to find an available voucher with remaining games (user_id is NULL and remaining games > 0)
+        # First, try to create a new unique code (priority on unique codes)
+        for _ in range(9999):
+            code = _generate_code()
+            v = Voucher(
+                code=code,
+                user_id=int(user_id),
+                issued_by=(int(issued_by) if issued_by is not None else None),
+                use_count=0,
+                total_games=int(total_games),
+            )
+            s.add(v)
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                continue
+            s.refresh(v)
+            return v
+
+        # If we couldn't generate a unique code, try to find an available voucher with remaining games (user_id is NULL and remaining games > 0)
         available_with_games = s.scalar(
             select(Voucher)
             .where(Voucher.user_id.is_(None))
@@ -55,7 +72,7 @@ def _issue_voucher_for_user(
             s.refresh(available_with_games)
             return available_with_games
 
-        # Second, try to reuse an exhausted voucher (use_count >= total_games)
+        # Last resort: try to reuse an exhausted voucher (use_count >= total_games)
         exhausted = s.scalar(
             select(Voucher)
             .where(Voucher.use_count >= Voucher.total_games)
@@ -72,25 +89,6 @@ def _issue_voucher_for_user(
             s.commit()
             s.refresh(exhausted)
             return exhausted
-
-        # Otherwise, create a new code.
-        for _ in range(9999):
-            code = _generate_code()
-            v = Voucher(
-                code=code,
-                user_id=int(user_id),
-                issued_by=(int(issued_by) if issued_by is not None else None),
-                use_count=0,
-                total_games=int(total_games),
-            )
-            s.add(v)
-            try:
-                s.commit()
-            except IntegrityError:
-                s.rollback()
-                continue
-            s.refresh(v)
-            return v
 
         raise HTTPException(
             status_code=500,
