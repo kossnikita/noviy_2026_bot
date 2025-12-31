@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiohttp import ClientSession, TCPConnector, ClientTimeout
 from aiogram.types import BotCommand
 from aiogram.types.bot_command_scope_all_private_chats import (
     BotCommandScopeAllPrivateChats,
@@ -32,6 +33,7 @@ from bot.middlewares.clear_tracks_wait_on_command import (
 from bot.middlewares.registration_required import (
     RegistrationRequiredMiddleware,
 )
+from bot.middlewares.network_error_handler import NetworkErrorMiddleware
 from bot.routers.unknown_commands import setup_unknown_commands_router
 from bot.schedulers.vouchers_sync import run_voucher_sync
 
@@ -75,10 +77,19 @@ async def main() -> None:
     users = UserRepo(api)
     chats = ChatRepo(api)
 
+    # Create aiohttp session with proper timeouts to prevent network errors
+    timeout = ClientTimeout(total=30, connect=10, sock_read=15)
+    connector = TCPConnector(limit=100, limit_per_host=10)
+    session = ClientSession(timeout=timeout, connector=connector)
+
     bot = Bot(
-        cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        cfg.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session,
     )
     dp = Dispatcher(storage=MemoryStorage())
+    # Handle network errors gracefully
+    dp.error.middleware(NetworkErrorMiddleware())
     # Log command invocations (/start, /track, etc.)
     dp.message.middleware(CommandLoggingMiddleware())
     # If user is in tracks "waiting" state and sends a command, drop that state
@@ -221,6 +232,9 @@ async def main() -> None:
 
         if api_server is not None:
             api_server.thread.join(timeout=5)
+
+        # Properly close the bot session
+        await bot.session.close()
         logger.info("Polling stopped.")
 
 
