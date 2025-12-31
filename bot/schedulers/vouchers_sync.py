@@ -24,8 +24,9 @@ async def run_voucher_sync(
             # 1) Cleanup: delete Telegram messages for vouchers that have been used.
             # Fetch all active voucher messages (deleted_at IS NULL)
             try:
-                messages_to_check = api.get_json(
-                    "/slot/voucher-messages?active_only=1&limit=1000&offset=0"
+                messages_to_check = await asyncio.to_thread(
+                    api.get_json,
+                    "/slot/voucher-messages?active_only=1&limit=1000&offset=0",
                 )
             except ApiError as e:
                 log.warning("Failed to fetch voucher messages: %s", e)
@@ -51,8 +52,9 @@ async def run_voucher_sync(
 
                     # Lookup current voucher state from API
                     try:
-                        voucher_list = api.get_json(
-                            f"/slot/voucher?code={voucher_code}&user_id={user_id}"
+                        voucher_list = await asyncio.to_thread(
+                            api.get_json,
+                            f"/slot/voucher?code={voucher_code}&user_id={user_id}",
                         )
                     except ApiError as lookup_err:
                         log.debug(
@@ -87,12 +89,13 @@ async def run_voucher_sync(
                             f"message {message_id} as deleted"
                         )
                         try:
-                            api.delete(
-                                f"/slot/voucher-messages/{db_record_id}"
+                            await asyncio.to_thread(
+                                api.delete,
+                                f"/slot/voucher-messages/{db_record_id}",
                             )
                         except ApiError as e:
                             log.warning(
-                                f"Failed to mark message {msg_id} as deleted: {e}"
+                                f"Failed to mark message {db_record_id} as deleted: {e}"
                             )
                         continue
 
@@ -129,12 +132,13 @@ async def run_voucher_sync(
 
                         # Mark in API DB as deleted
                         try:
-                            api.delete(
-                                f"/slot/voucher-messages/{db_record_id}"
+                            await asyncio.to_thread(
+                                api.delete,
+                                f"/slot/voucher-messages/{db_record_id}",
                             )
                         except ApiError as e:
                             log.warning(
-                                f"Failed to mark DB record {msg_id} as deleted: {e}"
+                                f"Failed to mark DB record {db_record_id} as deleted: {e}"
                             )
 
                 except Exception as e:
@@ -144,8 +148,9 @@ async def run_voucher_sync(
 
             # 2) Delivery: send new voucher DMs (vouchers with no message record yet)
             try:
-                vouchers = api.get_json(
-                    "/slot/voucher?active_only=1&limit=1000&offset=0"
+                vouchers = await asyncio.to_thread(
+                    api.get_json,
+                    "/slot/voucher?active_only=1&limit=1000&offset=0",
                 )
             except ApiError as e:
                 log.warning("Failed to fetch vouchers: %s", e)
@@ -168,7 +173,7 @@ async def run_voucher_sync(
                     try:
                         query = f"/slot/voucher-messages?user_id={user_id}&"
                         query += f"voucher_code={code}&active_only=1"
-                        existing = api.get_json(query)
+                        existing = await asyncio.to_thread(api.get_json, query)
                     except ApiError as e:
                         log.debug(f"API error checking message records: {e}")
                         existing = []
