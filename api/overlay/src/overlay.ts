@@ -34,6 +34,8 @@ let trackUserCache: Map<string, number> = new Map();
 function setStatus(text: string) {
     if (!statusEl) return;
     statusEl.textContent = text;
+    // Hide status display if WebSocket is connected (normal state)
+    statusEl.style.display = text === "ws: connected" ? "none" : "";
 }
 
 const cfg: OverlayConfig = {
