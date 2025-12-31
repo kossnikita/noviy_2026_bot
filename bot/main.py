@@ -6,7 +6,6 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiohttp import ClientTimeout
 from aiogram.types import BotCommand
 from aiogram.types.bot_command_scope_all_private_chats import (
     BotCommandScopeAllPrivateChats,
@@ -78,9 +77,8 @@ async def main() -> None:
     users = UserRepo(api)
     chats = ChatRepo(api)
 
-    # Create aiogram session with proper timeouts to prevent network errors
-    timeout = ClientTimeout(total=30, connect=10, sock_read=15)
-    session = AiohttpSession(timeout=timeout)
+    # Create aiogram session with increased timeout (10s) to prevent network errors
+    session = AiohttpSession(timeout=10)
 
     bot = Bot(
         cfg.bot_token,
