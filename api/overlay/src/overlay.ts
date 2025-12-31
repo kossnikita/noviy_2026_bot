@@ -1,6 +1,6 @@
 import { cleanBaseUrl, resolveUrl } from "./utils";
 import { OverlayConfig } from "./overlay/types";
-import { coverImg, photoImg, statusEl } from "./overlay/dom";
+import { coverImg, photoImg, statusEl, trackLayer } from "./overlay/dom";
 import { applyAnimation } from "./overlay/dom_helpers";
 import { getUserName } from "./overlay/overlay_helpers";
 import { wsConnect } from "./overlay/ws";
@@ -226,6 +226,16 @@ wsConnect(
                 for (const track of playlist) {
                     if (track && track.spotify_id && track.added_by) {
                         trackUserCache.set(String(track.spotify_id), Number(track.added_by));
+                    }
+                }
+
+                // Show/hide track layer based on playing state
+                const isPlaying = state.playing === true;
+                if (trackLayer) {
+                    if (isPlaying) {
+                        trackLayer.classList.remove("isHidden");
+                    } else {
+                        trackLayer.classList.add("isHidden");
                     }
                 }
 

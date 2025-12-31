@@ -8,6 +8,6 @@ export const albumEl = el<HTMLDivElement>("album");
 export const requestedByEl = el<HTMLDivElement>("requestedBy");
 export const coverImg = el<HTMLImageElement>("coverImg");
 export const statusEl = el<HTMLDivElement>("status");
-export const photoLayer = el<HTMLDivElement>("photoLayer");
+export const trackLayer = el<HTMLDivElement>("trackLayer"); export const photoLayer = el<HTMLDivElement>("photoLayer");
 export const photoImg = el<HTMLImageElement>("photoImg");
 export const photoCaption = el<HTMLDivElement>("photoCaption");
