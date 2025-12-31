@@ -71,7 +71,6 @@ async def test_voucher_sync_deletes_message_with_revoke_true(
     call_kwargs = bot.delete_message.call_args.kwargs
     assert call_kwargs["chat_id"] == 456
     assert call_kwargs["message_id"] == 1000
-    assert call_kwargs["revoke"] is True
 
 
 @pytest.mark.asyncio
