@@ -16,6 +16,7 @@ import {
     fetchSpotifyAccessTokenFromBackend as fetchSpotifyAccessTokenFromBackendModule,
     getSpotifyAccessToken as getSpotifyAccessTokenModule,
 } from "./overlay/spotify_sdk";
+import { initSlotWins, handleSlotWinMessage } from "./overlay/slot_wins";
 
 declare global {
     interface Window {
@@ -107,44 +108,44 @@ async function pollSpotifyCurrentTrack() {
     try {
         const token = await getSpotifyAccessToken();
         if (!token) return;
-        
+
         const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
         });
-        
+
         if (res.status === 204 || res.status === 202) {
             // No active playback
             return;
         }
-        
+
         if (!res.ok) {
             console.warn("overlay: spotify currently-playing failed", res.status);
             return;
         }
-        
+
         const data = await res.json();
         const item = data?.item;
         if (!item || item.type !== "track") return;
-        
+
         const trackId = item.id;
         if (!trackId || trackId === currentSpotifyTrackId) return;
-        
+
         console.log("overlay: spotify track changed", {
             previous: currentSpotifyTrackId,
             current: trackId,
             isPlaying: data?.is_playing,
         });
-        
+
         currentSpotifyTrackId = trackId;
-        
+
         const trackName = item.name || "";
         const artists = (item.artists || [])
             .map((a: any) => a?.name || "")
             .filter(Boolean)
             .join(", ");
         const coverUrl = item.album?.images?.[0]?.url || "";
-        
+
         // Find who added this track from our cache
         const addedBy = trackUserCache.get(trackId);
         let requester = "";
@@ -155,7 +156,7 @@ async function pollSpotifyCurrentTrack() {
                 // ignore
             }
         }
-        
+
         console.log("overlay: rendering track", { trackId, trackName, artists, requester });
         renderTrack({ title: trackName, artists, coverUrl }, requester);
         hideSpotifyEmbed();
@@ -179,6 +180,9 @@ setupSpotifyAuthButton(cfg, apiUrl, fetchSpotifyAccessTokenFromBackend, showSpot
 applyAnimation(coverImg);
 applyAnimation(photoImg);
 
+// Initialize slot wins module (creates DOM elements for notifications)
+initSlotWins();
+
 // Start Spotify polling after a short delay to allow token fetch
 setTimeout(() => {
     console.log("overlay: starting spotify polling");
@@ -200,6 +204,13 @@ wsConnect(
     },
     async (msg) => {
         try {
+            // Handle slot_win messages
+            if (msg && msg.type === "slot_win") {
+                console.log("overlay: received slot_win message via WS");
+                await handleSlotWinMessage(msg, apiUrl, headers);
+                return;
+            }
+
             if (msg && msg.type === "state") {
                 const state = msg as any;
                 const version = typeof state.version === "number" ? state.version : 0;
@@ -209,7 +220,7 @@ wsConnect(
                 if (version) {
                     lastStateVersion = version;
                 }
-                
+
                 // Update track -> user cache from playlist
                 const playlist = Array.isArray(state.playlist) ? state.playlist : [];
                 for (const track of playlist) {
@@ -217,14 +228,14 @@ wsConnect(
                         trackUserCache.set(String(track.spotify_id), Number(track.added_by));
                     }
                 }
-                
+
                 console.log("overlay: state from backend", {
                     playing: state.playing,
                     index: state.index,
                     playlistLength: playlist.length,
                     version,
                 });
-                
+
                 hideSpotifyEmbed();
             }
         } catch (err) {

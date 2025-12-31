@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -110,7 +111,9 @@ def count_wins(request: Request):
     status_code=status.HTTP_201_CREATED,
 )
 def create_wins(
-    payload: PrizeWinsCreate, request: Request
+    payload: PrizeWinsCreate,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ) -> list[PrizeWinOut]:
     if not payload.wins:
         raise HTTPException(status_code=422, detail="wins must not be empty")
@@ -139,7 +142,57 @@ def create_wins(
             created.append((win, prize))
 
         s.commit()
-        return [_win_to_out(win, prize) for (win, prize) in created]
+
+        # Prepare results and broadcast data
+        results = [_win_to_out(win, prize) for (win, prize) in created]
+
+        # Schedule broadcast for each win
+        for win_out in results:
+            background_tasks.add_task(
+                _broadcast_slot_win_bg,
+                request.app,
+                win_out.model_dump(mode="json"),
+            )
+
+        return results
+
+
+def _broadcast_slot_win_bg(app, win_data: dict) -> None:
+    """Background task to broadcast slot win via WebSocket."""
+
+    # Use internal endpoint to broadcast (runs in same process)
+    try:
+        ctrl = app.state.player
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_broadcast_slot_win_async(ctrl, win_data))
+        finally:
+            loop.close()
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to broadcast slot win: %s", e
+        )
+
+
+async def _broadcast_slot_win_async(ctrl, win_data: dict) -> None:
+    """Async broadcast to all connected WebSocket clients."""
+
+    payload = {
+        "type": "slot_win",
+        **win_data,
+    }
+    dead = []
+    async with ctrl.lock:
+        for ws in list(ctrl.clients):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            ctrl.clients.discard(ws)
 
 
 @router.get("/prize", response_model=list[PrizeOut])
